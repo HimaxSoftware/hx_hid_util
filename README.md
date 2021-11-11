@@ -1,2 +1,11 @@
-# hx_hid_util
-Himax Touchscreen Tool for Chrome Firmware Update
+# hx_util_src
+A Linux tool to operate himax's controller to get info or upgrade FW only.
+This source have been compiled and verified under Ubuntu 14.04.
+
+Just get the whole project and enter the "hx_util_src" folder.
+  make: to build the exectue project "hx_util".
+  make clean: to clena the whole project.
+
+Himax Update Utility
+Copyright 2021 Himax Technologies, Inc. (http://www.himax.com.tw/).
+
