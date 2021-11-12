@@ -1,5 +1,4 @@
 /*
- * Copyright (C) 2021 Chen Yuan_Ting
  * Copyright (C) 2021 Himax Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +27,7 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.0.1"
+#define HX_UTIL_VER "V1.0.2"
 
 #define HX_UTIL_OPT	"hd:u:cbivps"
 

@@ -1,5 +1,4 @@
 /*
- * Copyright (C) 2021 Chen Yuan-Ting
  * Copyright (C) 2021 Himax Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -508,7 +507,7 @@ static bool himax_sense_off(bool check_en)
 
 	return false;
 }
-
+#if 0
 static bool himax_flash_sector_erase(uint32_t start_addr, uint32_t length)
 {
 	uint32_t page_prog_start = 0;
@@ -567,7 +566,7 @@ static bool himax_flash_sector_erase(uint32_t start_addr, uint32_t length)
 	printf("%s: END\n", __func__);
 	return true;
 }
-
+#endif
 static bool himax_flash_block_erase(uint32_t start_addr, uint32_t length)
 {
 	uint32_t page_prog_start = 0;
@@ -1082,7 +1081,7 @@ int find_device_name(char *hid_dev_name, char *driver_name)
 	int device_found = 0;
 	ssize_t sz;
 	char tmp_buf[256];
-	char tmp_path[256];
+	char tmp_path[288];
 
 	devs_dir = opendir(dev_path);
 	if (!devs_dir) {
@@ -1157,7 +1156,7 @@ int rebind_driver(DEVINFO *devp)
 	char hid_dev_name[64];
 	char driver_path[64];
 	char i2c_dev_name[64];
-	char attr_str[64];
+	char attr_str[128];
 
 	printf("Start to rebind driver !\n");
 
