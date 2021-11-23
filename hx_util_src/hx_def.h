@@ -26,6 +26,7 @@ typedef unsigned int   uint32_t;
 #define OPTION_UPDATE        0x01
 #define OPTION_CMP_VER       0x02
 #define	OPTION_REBIND        0x04
+#define	OPTION_ALL_LEN       0x08
 /* define for info from the device */
 #define OPTION_INFO          0x10
 #define OPTION_FW_VER        0x20

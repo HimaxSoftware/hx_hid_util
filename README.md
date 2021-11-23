@@ -7,5 +7,5 @@ Just get the whole project and enter the "hx_hid_util" folder.
   make clean: to clean the whole project.
 
 Himax Update Utility
-Copyright 2021 Himax Technologies, Inc. (http://www.himax.com.tw/).
+Copyright 2021 Himax Technologies, Limited. (http://www.himax.com.tw/).
 

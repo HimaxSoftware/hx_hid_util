@@ -54,7 +54,6 @@ int hx_scan_i2c_adaptor_path(int *adaptor_no)
 		sprintf(dev_path, "%s/i2c-%d", dev_sysfs_adapter_path, adp_no);
 		d = opendir(dev_path);
 		if (d) {
-		//	char slave_dev[10];
 			char slave_dev[16];
 			strcpy(slave_dev, HX_ACPI_NAME);
 
@@ -119,7 +118,6 @@ int	 hx_scan_i2c_device(char *devp)
 		return 0;
 	}
 
-//	strcpy(g_dev_path, "/dev/i2c-0");
 	strcpy(g_dev_path, DEFAULT_I2C_BUS);
 
 //	found = hx_scan_i2c_hid_path(&adaptor_no);

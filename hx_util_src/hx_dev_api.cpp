@@ -344,14 +344,14 @@ static bool himax_wait_wip(uint32_t Timing)
 
 	return true;
 }
-
-//static void himax_init_psl(void)
-//{
-//	himax_register_write(pic_op->addr_psl, pic_op->data_rst,
-//		sizeof(pic_op->data_rst));
-//	printf("%s: power saving level reset OK!\n", __func__);
-//}
-
+#if 0
+static void himax_init_psl(void)
+{
+	himax_register_write(pic_op->addr_psl, pic_op->data_rst,
+		sizeof(pic_op->data_rst));
+	printf("%s: power saving level reset OK!\n", __func__);
+}
+#endif
 static void himax_system_reset(void)
 {
 	int ret = 0;
@@ -507,7 +507,7 @@ static bool himax_sense_off(bool check_en)
 
 	return false;
 }
-#if 0
+
 static bool himax_flash_sector_erase(uint32_t start_addr, uint32_t length)
 {
 	uint32_t page_prog_start = 0;
@@ -566,7 +566,7 @@ static bool himax_flash_sector_erase(uint32_t start_addr, uint32_t length)
 	printf("%s: END\n", __func__);
 	return true;
 }
-#endif
+#if 0
 static bool himax_flash_block_erase(uint32_t start_addr, uint32_t length)
 {
 	uint32_t page_prog_start = 0;
@@ -625,7 +625,7 @@ static bool himax_flash_block_erase(uint32_t start_addr, uint32_t length)
 	printf("%s: END\n", __func__);
 	return true;
 }
-
+#endif
 static void himax_flash_programming(uint8_t *FW_content, uint32_t FW_Size)
 {
 	uint32_t page_prog_start = 0;
@@ -652,7 +652,6 @@ static void himax_flash_programming(uint8_t *FW_content, uint32_t FW_Size)
 		trans_fmt, 4);
 
 	for (page_prog_start = 0; page_prog_start < FW_Size;
-//	for (page_prog_start = 0x2000; page_prog_start < 0x3F000;
 	page_prog_start += FLASH_RW_MAX_LEN) {
 		himax_register_write(flash_addr_spi200_trans_ctrl,
 			trans_ctrl2, 4);
@@ -794,9 +793,7 @@ int himax_fw_update(uint8_t *fw, uint32_t len)
 //	himax_flash_speed_set(HX_FLASH_SPEED_12p5M);
 	himax_register_write(flash_clk_setup_addr, tmp_data, 4);
 
-	himax_flash_block_erase(0x00, len);
-//	himax_flash_block_erase(0x2000, 0x30000);
-//	himax_flash_sector_erase(0x2000, 0x3D000);
+	himax_flash_sector_erase(0x00, len);
 
 	himax_flash_programming(fw, len);
 
@@ -906,6 +903,7 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 	int ret = 0;
 	HXFW fw;
 	uint8_t tmp_data[4] = {0};
+	uint32_t burnlen = 0;
 
 	if (!devp || !optp) {
 		printf("%s: parameter error\n", __func__);
@@ -949,7 +947,13 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 		}
 	}
 
-	himax_fw_update(fw.data, fw.len);
+	if (optp->options & OPTION_ALL_LEN)
+		burnlen = fw.len;
+	else
+		burnlen = 0x3C000;
+
+//	himax_fw_update(fw.data, fw.len);
+	himax_fw_update(fw.data, burnlen);
 
 //	g_core_fp.fp_reload_disable(0);
 	himax_parse_assign_cmd(driver_data_fw_define_flash_reload_en, tmp_data, 4);

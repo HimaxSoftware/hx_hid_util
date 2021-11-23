@@ -27,14 +27,15 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.0.3"
+#define HX_UTIL_VER "V1.0.4"
 
-#define HX_UTIL_OPT	"hd:u:cbivps"
+#define HX_UTIL_OPT	"hd:u:acbivps"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
 	{"device", 1, NULL, 'd'},
 	{"update", 1, NULL, 'u'},
+	{"all", 0, NULL, 'a'},
 	{"compare", 0, NULL, 'c'},
 	{"rebind", 0, NULL, 'b'},
 	{"info", 0, NULL, 'i'},
@@ -59,6 +60,7 @@ void print_help(const char *prog_name)
 	printf("\t-h, --help\tOption description.\n");
 	printf("\t-d, --device\ti2c device file associated with the device.\n");
 	printf("\t-u, --update\tUpdate firmware with verification.\n");
+	printf("\t-a, --all\tUpdate entire firmware\n");
 	printf("\t-c, --compare\tCompare firmware version before updating.\n");
 	printf("\t-b, --rebind\tRebind driver after updating firmware.\n");
 	printf("\t-i, --info\tShow the device information.\n");
@@ -87,17 +89,6 @@ unsigned long get_current_ms()
     return (ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
-int check_privilege()
-{
-	uid_t uid = getuid();
-	uid_t euid = geteuid();
-
-	if (uid == 0 || euid == 0)
-		return 0;
-
-	return 1;
-}
-
 int parse_options(int argc, char *argv[], OPTDATA *optp)
 {
 	int opt;
@@ -124,6 +115,9 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 		case 'u':
 			optp->options |= OPTION_UPDATE;
 			optp->fw_path = optarg;
+			break;
+		case 'a':
+			optp->options |= OPTION_ALL_LEN;
 			break;
 		case 'c':
 			optp->options |= OPTION_CMP_VER;
@@ -180,11 +174,6 @@ int main(int argc, char *argv[])
 
 	if (!(opt_data.options & info_option))
 		print_version();
-
-	if (check_privilege()) {
-		printf("Need root authority to execute this utility!\n");
-		return 1;
-	}
 
 	time_s = get_current_ms();
 
