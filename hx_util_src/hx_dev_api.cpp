@@ -119,7 +119,7 @@ static void himax_burst_enable(uint8_t auto_add_4_byte)
 	hx_buf[1] = ic_cmd_conti;
 	ret = hx_i2c_write(hx_buf, 2);
 	if (ret < 0) {
-		printf("%s: bus access fail!\n", __func__);
+		fprintf(stderr, "%s: bus access fail!\n", __func__);
 		return;
 	}
 
@@ -127,7 +127,7 @@ static void himax_burst_enable(uint8_t auto_add_4_byte)
 	hx_buf[1] = ic_cmd_incr4 | auto_add_4_byte;
 	ret = hx_i2c_write(hx_buf, 2);
 	if (ret < 0) {
-		printf("%s: bus access fail!\n", __func__);
+		fprintf(stderr, "%s: bus access fail!\n", __func__);
 		return;
 	}
 }
@@ -154,7 +154,7 @@ int himax_register_read(uint32_t addr, uint8_t *buf, uint32_t len)
 	memcpy(hx_buf+1, addr_t, 4);
 	ret = hx_i2c_write(hx_buf, 5);
 	if (ret < 0) {
-		printf("set address fail\n");
+		fprintf(stderr, "set address fail\n");
 		return ret;
 	}
 
@@ -164,7 +164,7 @@ int himax_register_read(uint32_t addr, uint8_t *buf, uint32_t len)
 	hx_buf[1] = ic_cmd_ahb_access_direction_read;
 	ret = hx_i2c_write(hx_buf, 2);
 	if (ret < 0) {
-		printf("set direction fail\n");
+		fprintf(stderr, "set direction fail\n");
 		return ret;
 	}
 
@@ -172,7 +172,7 @@ int himax_register_read(uint32_t addr, uint8_t *buf, uint32_t len)
 	hx_buf[0] = ic_adr_ahb_rdata_byte_0;
 	ret = hx_i2c_read(hx_buf, 1, buf, len);
 	if (ret < 0) {
-		printf("read data fail\n");
+		fprintf(stderr, "read data fail\n");
 		return ret;
 	}
 
@@ -202,7 +202,7 @@ int himax_register_write(uint32_t addr, uint8_t *val, uint32_t len)
 	memcpy(hx_buf+5, val, len);
 	ret = hx_i2c_write(hx_buf, len+5);
 	if (ret < 0) {
-		printf("%s: write i2c fail!\n", __func__);
+		fprintf(stderr, "%s: write i2c fail!\n", __func__);
 		return ret;
 	}
 
@@ -952,6 +952,8 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 	else
 		burnlen = 0x3C000;
 
+	printf("burn length is %d\n", burnlen);
+
 //	himax_fw_update(fw.data, fw.len);
 	himax_fw_update(fw.data, burnlen);
 
@@ -986,7 +988,7 @@ int show_info(DEVINFO *devp, OPTDATA *optp)
 	uint8_t data[4];
 
 	if (!devp || !optp) {
-		printf("%s: parameter fail\n", __func__);
+		fprintf(stderr, "%s: parameter fail\n", __func__);
 		return ret;
 	}
 
@@ -1007,7 +1009,10 @@ int show_info(DEVINFO *devp, OPTDATA *optp)
 //		printf("%04X", (data[2] << 8 | data[3]));
 //	}
 
-	himax_register_read(fw_addr_fw_id_ver_addr, data, 4);
+	ret = himax_register_read(fw_addr_fw_id_ver_addr, data, 4);
+	if (ret)
+		goto exit;
+
 	if (optp->options & OPTION_PID) {
 		printf("%04X", data[0] << 8 | data[1]);
 	} else if (optp->options & OPTION_FW_VER) {

@@ -27,7 +27,7 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.0.4"
+#define HX_UTIL_VER "V1.0.5"
 
 #define HX_UTIL_OPT	"hd:u:acbivps"
 
@@ -167,7 +167,7 @@ int main(int argc, char *argv[])
 
 	memset((void*) &opt_data, 0, sizeof(OPTDATA));
 	memset(&dev_info, 0, sizeof(DEVINFO));
-	
+
 	if (parse_options(argc, argv, &opt_data)) {
 		return 1;
 	}

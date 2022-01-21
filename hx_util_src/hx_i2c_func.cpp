@@ -168,7 +168,7 @@ int	hx_close_i2c_device(void)
 		close(devfd);
 		return 0;
 	} else {
-		printf("devfd is invalid !!\n");
+		fprintf(stderr, "devfd is invalid !!\n");
 		return 1;
 	}
 }
@@ -180,7 +180,7 @@ int hx_i2c_write(uint8_t *buf, uint32_t size)
 	struct i2c_msg msgs[1];
 
 	if (!buf) {
-		printf("%s: pointer is null\n", __func__);
+		fprintf(stderr, "%s: pointer is null\n", __func__);
 		return err;
 	}
 
@@ -195,7 +195,7 @@ int hx_i2c_write(uint8_t *buf, uint32_t size)
 	err = ioctl(devfd, I2C_RDWR, &i2c_rdwr_data);
 
 	if (err < 0) {
-		printf("%s: ioctl operation failed: (%d)\n", __func__, err);
+		fprintf(stderr, "%s: ioctl operation failed: (%d)\n", __func__, err);
 		return err;
 	}
 
@@ -209,7 +209,7 @@ int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 	struct i2c_msg msgs[2];
 
 	if (!txbuf || !rxbuf) {
-		printf("%s: pointer is null\n", __func__);
+		fprintf(stderr, "%s: pointer is null\n", __func__);
 		return err;
 	}
 
@@ -228,7 +228,7 @@ int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 
 	err = ioctl(devfd, I2C_RDWR, &i2c_rdwr_data);
 	if (err < 0) {
-		printf("%s: ioctl operation failed: (%d)\n", __func__, err);
+		fprintf(stderr, "%s: ioctl operation failed: (%d)\n", __func__, err);
 		return err;
 	}
 
