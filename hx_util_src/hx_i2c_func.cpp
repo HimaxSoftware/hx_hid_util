@@ -22,6 +22,8 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <errno.h>
+#include <time.h>
 #include "i2c-dev.h"
 
 #include "hx_def.h"
@@ -235,3 +237,64 @@ int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 	return err;
 }
 
+int hid_i2c_write(uint8_t *buf, uint32_t size)
+{
+	int err = -1;
+	struct i2c_rdwr_ioctl_data i2c_rdwr_data;
+	struct i2c_msg msgs[1];
+
+	if (!buf) {
+		fprintf(stderr, "%s: pointer is null\n", __func__);
+		return err;
+	}
+
+	msgs[0].addr = HX_I2C_ADDR;
+	msgs[0].flags = 0; //I2C_M_IGNORE_NAK;
+	msgs[0].len = size;
+	msgs[0].buf = (char*)buf;
+
+	i2c_rdwr_data.msgs = msgs;
+	i2c_rdwr_data.nmsgs = 1;
+
+	err = ioctl(devfd, I2C_RDWR, &i2c_rdwr_data);
+
+	if (err < 0) {
+		fprintf(stderr, "%s: ioctl operation failed: (%d)\n", __func__, err);
+		return err;
+	}
+
+	return err;
+}
+
+int hid_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
+{
+	int err = -1;
+	struct i2c_rdwr_ioctl_data	i2c_rdwr_data;
+	struct i2c_msg msgs[2];
+
+	if (!txbuf || !rxbuf) {
+		fprintf(stderr, "%s: pointer is null\n", __func__);
+		return err;
+	}
+
+	msgs[0].addr = HX_I2C_ADDR;
+	msgs[0].flags = 0;
+	msgs[0].len = txlen;
+	msgs[0].buf = (char*)txbuf;
+
+	msgs[1].addr = HX_I2C_ADDR;
+	msgs[1].flags = I2C_M_RD;
+	msgs[1].len = rxlen;
+	msgs[1].buf = (char*)rxbuf;
+
+	i2c_rdwr_data.msgs = msgs;
+	i2c_rdwr_data.nmsgs = 2;
+
+	err = ioctl(devfd, I2C_RDWR, &i2c_rdwr_data);
+	if (err < 0) {
+		fprintf(stderr, "%s: ioctl operation failed: (%d)\n", __func__, err);
+		return err;
+	}
+
+	return err;
+}

@@ -26,10 +26,14 @@
 #include <string.h>
 #include <time.h>
 #include <dirent.h>
+#include <sys/ioctl.h>
+#include <linux/hidraw.h>
+
 
 #include "hx_def.h"
 #include "hx_ic.h"
 #include "hx_i2c_func.h"
+#include "hx_hid_func.h"
 
 uint8_t hx_buf[FLASH_RW_MAX_LEN];
 
@@ -231,7 +235,7 @@ void himax_parse_assign_cmd(uint32_t addr, uint8_t *cmd, uint32_t len)
 	}
 }
 
-int himax_update_check(HXFW *fwp)
+int himax_update_check(HXFW *fwp, hx_hid_info* hid_info = NULL)
 {
 	uint8_t *dp = NULL;
 	uint16_t i;
@@ -244,14 +248,18 @@ int himax_update_check(HXFW *fwp)
 	uint32_t fw_ver_ic = 0;
 	uint32_t fw_ver_bin = 0;
 
-	himax_register_read(ic_adr_cs_central_state, tmp_data, 4);
-	if (tmp_data[0] != 0x05) {
-		printf("ic state = %X\n", tmp_data[0]);
-		return 1;
+	if (hid_info == NULL) {
+		himax_register_read(ic_adr_cs_central_state, tmp_data, 4);
+		if (tmp_data[0] != 0x05) {
+			printf("ic state = %X\n", tmp_data[0]);
+			return 1;
+		} else {
+			himax_register_read(fw_addr_fw_vendor_addr, tmp_data, 4);
+			fw_ver_ic = tmp_data[2]<<8 | tmp_data[3];
+		//	printf("fw_ver_ic = %08X\n", fw_ver_ic);
+		}
 	} else {
-		himax_register_read(fw_addr_fw_vendor_addr, tmp_data, 4);
-		fw_ver_ic = tmp_data[2]<<8 | tmp_data[3];
-	//	printf("fw_ver_ic = %08X\n", fw_ver_ic);
+		fw_ver_ic = (hid_info->cid[0] << 8) | hid_info->cid[1];
 	}
 
 	dp = fwp->data;
@@ -1174,8 +1182,20 @@ int rebind_driver(DEVINFO *devp)
 		return 1;
 	}
 
-//	strcpy(driver_path, "/sys/bus/i2c/drivers/i2c_hid/");
-	strcpy(driver_path, "/sys/bus/i2c/drivers/i2c_hid_acpi/");
+	DIR* dir = opendir("/sys/bus/i2c/drivers/i2c_hid/");
+	if (dir) {
+		strcpy(driver_path, "/sys/bus/i2c/drivers/i2c_hid/");
+		closedir(dir);
+	} else {
+		dir = opendir("/sys/bus/i2c/drivers/i2c_hid_acpi/");
+		if (dir) {
+			strcpy(driver_path, "/sys/bus/i2c/drivers/i2c_hid_acpi/");
+			closedir(dir);
+		} else {
+			printf("No desire path exist!\n");
+			return -EACCES;
+		}
+	}
 
 	if (!find_device_name(hid_dev_name, i2c_dev_name)) {
 		printf("find device name failed %s\n", hid_dev_name);
@@ -1205,3 +1225,1662 @@ int rebind_driver(DEVINFO *devp)
 	return 0;
 }
 
+int read_reg(OPTDATA& opt_data)
+{
+	int ret;
+	uint8_t data[4] = {0};
+
+	if (himax_scan_device(&opt_data) == 0) {
+		ret = himax_register_read(opt_data.r_reg_addr.i, data, sizeof(data));
+		if (ret == 0) {
+			hx_printf("%s %08X:%08X\n", "Read done", *(uint32_t *)&(opt_data.r_reg_addr.b[0]), *(uint32_t *)&(data[0]));
+		} else {
+			hx_printf("%s %08X\n", "Read failed", *(uint32_t *)&(opt_data.r_reg_addr.b[0]));
+		}
+	} else {
+		return -ENODEV;
+	}
+	hx_close_i2c_device();
+
+	return ret;
+}
+
+int write_reg(OPTDATA& opt_data)
+{
+	int ret;
+	if (himax_scan_device(&opt_data) == 0) {
+		ret = himax_register_write(opt_data.w_reg_addr.i, opt_data.w_reg_data.b, opt_data.w_data_size);
+		if (ret == 0) {
+			hx_printf("%s %08X:%08X\n", "Write done", *(uint32_t *)&(opt_data.w_reg_addr.b[0]), *(uint32_t *)&(opt_data.w_reg_data.b[0]));
+		} else {
+			hx_printf("%s %08X:%08X\n", "Write failed", *(uint32_t *)&(opt_data.w_reg_addr.b[0]), *(uint32_t *)&(opt_data.w_reg_data.b[0]));
+		}
+	} else  {
+		return -ENODEV;
+	}
+	hx_close_i2c_device();
+
+	return ret;
+}
+
+static const hx_hid_fw_unit_t fw_main_121A[9] = {
+	{
+		.cmd = 0xA1,
+		.bin_start_offset = 0,
+		.unit_sz = 127,
+	},
+	{
+		.cmd = 0xA2,
+		.bin_start_offset = 129,
+		.unit_sz = 111,
+	},
+};
+
+static const hx_hid_fw_unit_t fw_bl_121A[1] = {
+	{
+		.cmd = 0xAB,
+		.bin_start_offset = 240,
+		.unit_sz = 12,
+	},
+};
+
+static const hx_hid_fw_unit_t fw_main_102J[9] = {
+	{
+		.cmd = 0xA1,
+		.bin_start_offset = 0,
+		.unit_sz = 72,
+	},
+	{
+		.cmd = 0xA2,
+		.bin_start_offset = 72,
+		.unit_sz = 72,
+	},
+	{
+		.cmd = 0xA3,
+		.bin_start_offset = 144,
+		.unit_sz = 72,
+	},
+	{
+		.cmd = 0xA4,
+		.bin_start_offset = 216,
+		.unit_sz = 24,
+	},
+};
+
+static const hx_hid_fw_unit_t fw_bl_102J[1] = {
+	{
+		.cmd = 0xAB,
+		.bin_start_offset = 240,
+		.unit_sz = 12,
+	},
+};
+
+#define TO_STRING(x)	#x
+#define IC_SIGN_TO_CHAR(x)	TO_STRING(x)[0] \
+							, TO_STRING(x)[1] \
+							, TO_STRING(x)[2] \
+							, TO_STRING(x)[3] \
+							, TO_STRING(x)[4] \
+							, TO_STRING(x)[5] \
+							, TO_STRING(x)[6] \
+							, TO_STRING(x)[7] \
+							, TO_STRING(x)[8]
+
+static const hx_ic_fw_layout_mapping_t g_ic_main_code_mapping_table[] = {
+	{
+		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83121-A)},
+		.fw_table = &fw_main_121A[0],
+	},
+	{
+		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83102-J)},
+		.fw_table = &fw_main_102J[0],
+	}
+};
+
+static const hx_ic_fw_layout_mapping_t g_ic_bl_code_mapping_table[] = {
+	{
+		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83121-A)},
+		.fw_table = &fw_bl_121A[0],
+	},
+	{
+		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83102-J)},
+		.fw_table = &fw_bl_102J[0],
+	}
+};
+
+int calculateMappingEntries(hx_hid_fw_unit_t* table, int totalSize)
+{
+	int actual_entries = 0;
+
+	for (int i = 0; i < (totalSize / sizeof(hx_hid_fw_unit_t)); i++) {
+		if (table[i].unit_sz != 0)
+			actual_entries++;
+		else
+			break;
+	}
+
+	return actual_entries;
+}
+
+int hid_write_reg(OPTDATA& opt_data)
+{
+	int ret;
+	uint8_t reg_n_data[9];
+
+	reg_n_data[0] = 0x1;// 1: write reg
+	memcpy(reg_n_data + 1, &(opt_data.w_reg_addr.b[0]), opt_data.w_addr_size);
+	memcpy(reg_n_data + 1 + 4, &(opt_data.w_reg_data.b[0]), opt_data.w_data_size);
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		ret = hx_hid_set_feature(HID_REG_RW_ID, reg_n_data, sizeof(reg_n_data));
+		if (ret == 0) {
+			hx_printf("%s %08X:%08X\n", "Write done", *(uint32_t *)&(reg_n_data[1]), *(uint32_t *)&(reg_n_data[5]));
+		} else {
+			hx_printf("%s %08X:%08X\n", "Write failed", *(uint32_t *)&(reg_n_data[1]), *(uint32_t *)&(reg_n_data[5]));
+		}
+
+		hx_hid_close();
+		return ret;
+	} else {
+		return -ENODEV;
+	}
+}
+
+int hid_read_reg(OPTDATA& opt_data)
+{
+	int ret;
+	uint8_t reg_n_data[9] = {0};
+
+	reg_n_data[0] = 0x0;// 0: read reg
+	memcpy(reg_n_data + 1, &(opt_data.r_reg_addr.b[0]), 4);
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		ret = hx_hid_set_feature(HID_REG_RW_ID, reg_n_data, sizeof(reg_n_data));
+		if (ret == 0) {
+			;//hx_printf("%s %08X:%08X\n", "Write done", *(uint32_t *)&(reg_n_data[1]), *(uint32_t *)&(reg_n_data[5]));
+		} else {
+			hx_printf("%s %08X:%08X\n", "Write failed", *(uint32_t *)&(reg_n_data[1]), *(uint32_t *)&(reg_n_data[5]));
+			goto R_REG_FUNC_END;
+		}
+		ret = hx_hid_get_feature(HID_REG_RW_ID, reg_n_data, sizeof(reg_n_data));
+		if (ret == 0) {
+			hx_printf("%s %08X:%08X\n", "Read done", *(uint32_t *)&(reg_n_data[1]), *(uint32_t *)&(reg_n_data[5]));
+		} else {
+			hx_printf("%s %08X:%08X\n", "Read failed", *(uint32_t *)&(reg_n_data[1]), *(uint32_t *)&(reg_n_data[5]));
+		}
+	} else {
+		return -ENODEV;
+	}
+R_REG_FUNC_END:
+	hx_hid_close();
+
+	return ret;
+}
+
+int hid_show_fw_info(OPTDATA& opt_data)
+{
+	int ret;
+	hx_hid_info info;
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
+		if (ret == 0) {
+			hx_printf("%s : %02X %02X\n", "passwd", info.passwd[0], info.passwd[1]);
+			hx_printf("%s : %02X %02X\n", "cid", info.cid[0], info.cid[1]);
+			hx_printf("%s : %02X\n", "panel_ver", info.panel_ver);
+			hx_printf("%s : %02X %02X\n", "fw_ver", info.fw_ver[0], info.fw_ver[1]);
+			hx_printf("%s : %C\n", "ic_sign", info.ic_sign);
+			hx_printf("%s : %s\n", "customer", info.customer);
+			hx_printf("%s : %s\n", "project", info.project);
+			hx_printf("%s : %s\n", "fw_major", info.fw_major);
+			hx_printf("%s : %s\n", "fw_minor", info.fw_minor);
+			hx_printf("%s : %s\n", "date", info.date);
+			hx_printf("%s : %s\n", "ic_sign_2", info.ic_sign_2);
+			hx_printf("%s : %02X %02X\n", "vid", info.vid[0], info.vid[1]);
+			hx_printf("%s : %02X %02X\n", "pid", info.pid[0], info.pid[1]);
+			hx_printf("%s : %02X\n", "Config version", info.cfg_version);
+			hx_printf("%s : %02X\n", "Display version", info.disp_version);
+			hx_printf("%s : %d\n", "RX", info.rx);
+			hx_printf("%s : %d\n", "TX", info.tx);
+			hx_printf("%s : %d\n", "YRES ", ((info.yres & 0xFF) << 8 ) + ((info.yres & 0xFF00) >> 8));
+			hx_printf("%s : %d\n", "XRES", ((info.xres & 0xFF) << 8) + ((info.xres & 0xFF00) >> 8));
+			hx_printf("%s : %d\n", "PT_NUM", info.pt_num);
+			hx_printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
+			hx_printf("FW layout : \n");
+			for (int i = 0; i < 9; i++)
+				hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+					info.main_mapping[i].cmd, info.main_mapping[i].bin_start_offset * 1024, \
+					info.main_mapping[i].unit_sz);
+			hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+					info.bl_mapping.cmd, info.bl_mapping.bin_start_offset * 1024, \
+					info.bl_mapping.unit_sz);
+		}
+
+		hx_hid_close();
+		return 0;
+	} else {
+		return -ENODEV;
+	}
+}
+
+int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	hx_hid_info oinfo;
+	hx_hid_info ninfo;
+	bool bOinfoValid = false;
+	bool bNinfoValid = false;
+	bool bGoUpdate = false;
+	HXFW hxfw;
+	time_t start, now;
+	uint8_t recevied_data[2] = {0};
+	int nDataRecevied = 0;
+	const uint32_t pollingInterval = 300;
+	uint32_t writeSize;
+	uint32_t fwStartLoc;
+	uint32_t outputTimes;
+	const uint8_t main_update_cmd = 0x55;
+	const uint32_t main_code_seg_sz = 240 * 1024;
+	const uint32_t main_seg_1_sz = 127 * 1024;
+	const uint32_t main_seg_ignore_sz = 2 * 1024;
+	const uint32_t main_seg_2_sz = main_code_seg_sz - main_seg_1_sz - main_seg_ignore_sz;
+	int ret = 0;
+	int fw_entries = 0;
+	hx_hid_fw_unit_t* fw_entry_table = NULL;
+	lastError = FWUP_ERROR_NO_ERROR;
+
+	if (himax_load_fw(opt_data.fw_path, &hxfw) != 0) {
+		ret = -ENODATA;
+		lastError = FWUP_ERROR_LOAD_FW_BIN;
+		goto LOAD_FW_FAILED;
+	}
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			int sz = hx_hid_get_size_by_id(HID_FW_UPDATE_ID);
+			bool bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
+			if ((sz > 0) && bHandshakePresent) {
+				bool useFwInfoEntries = true;
+
+				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
+					if ((oinfo.passwd[0] != 0xA5) || (oinfo.passwd[1] != 0x5A)) {
+						useFwInfoEntries = false;
+					} else {
+						fw_entries = calculateMappingEntries(oinfo.main_mapping, sizeof(oinfo.main_mapping));
+						if (fw_entries > 0) {
+							useFwInfoEntries = true;
+							fw_entry_table = oinfo.main_mapping;
+						}
+					}
+					bOinfoValid = true;
+				} else {
+					bOinfoValid = false;
+					useFwInfoEntries = false;
+				}
+
+				if (!useFwInfoEntries && bOinfoValid) {
+					for (int i = 0; i < sizeof(g_ic_main_code_mapping_table)/sizeof(hx_ic_fw_layout_mapping_t); i++) {
+						if (memcmp(g_ic_main_code_mapping_table[i].ic_sign_2, oinfo.ic_sign_2, sizeof(oinfo.ic_sign_2)) == 0) {
+							fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)g_ic_main_code_mapping_table[i].fw_table, sizeof(hx_hid_fw_unit_t)* 9);
+							fw_entry_table = (hx_hid_fw_unit_t *)g_ic_main_code_mapping_table[i].fw_table;
+							break;
+						}
+					}
+				}
+
+				if ((opt_data.options & OPTION_HID_FORCE_UPDATE) == 0) {
+					if (bOinfoValid)
+						bGoUpdate = (himax_update_check(&hxfw, &oinfo) > 0)?true:false;
+					else
+						bGoUpdate = false;
+				} else {
+					if (fw_entries == 0) {
+						fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fw_main_121A, sizeof(hx_hid_fw_unit_t)* 9);
+						fw_entry_table = (hx_hid_fw_unit_t *)fw_main_121A;
+					}
+					bGoUpdate = true;
+				}
+
+				if (bGoUpdate && (fw_entries > 0)) {
+					uint8_t cmd = 0;
+
+					if(hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) == 0)
+						hx_printf("ID %02X read %02X\n", HID_FW_UPDATE_HANDSHAKING_ID, cmd);
+
+					cmd = main_update_cmd;
+					if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) != 0) {
+						hx_printf("Initial HID FW update failed!\n");
+						lastError = FWUP_ERROR_INITIAL;
+						goto HID_FW_UPDATE_END;
+					} else {
+						hx_printf("Initializing HID FW update....\n");
+						// usleep(1500 * 1000);
+					}
+					for (int i = 0; i < fw_entries; i++) {
+						start = time(NULL);
+
+POLL_AGAIN:
+						cmd = fw_entry_table[i].cmd;
+						if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
+							recevied_data, &nDataRecevied)) {
+							if (nDataRecevied > 0) {
+								if ((recevied_data[0] == FWUP_ERROR_MCU_A0)||(recevied_data[0] == FWUP_ERROR_MCU_00)) {
+									now = time(NULL);
+									if (now - start >= 7) {
+										lastError = recevied_data[0];
+										goto POLL_FAILED;
+									}
+									usleep(pollingInterval * 1000);
+									goto POLL_AGAIN;
+								} else if (recevied_data[0] == FWUP_ERROR_NO_BL) {
+									hx_printf("Can't update Main code due to no Bootloader(0x%02X)!\n", recevied_data[0]);
+								} else if (recevied_data[0] == FWUP_ERROR_NO_MAIN) {
+									hx_printf("Can't update Bootloader due to no Main code(0x%02X)!\n", recevied_data[0]);
+								}
+								hx_printf("polling for 0x%X, but result(0x%X) not expected!\n", cmd, recevied_data[0]);
+								lastError = recevied_data[0];
+								ret = -EIO;
+								goto HID_FW_UPDATE_END;
+							}
+POLL_FAILED:
+							hx_printf("Polling for 0x%X timeout!\n", cmd);
+							lastError = FWUP_ERROR_POLLING_TIMEOUT;
+							ret = -EIO;
+							goto HID_FW_UPDATE_END;
+						}
+
+						writeSize = fw_entry_table[i].unit_sz * 1024;
+						fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
+						outputTimes = writeSize / sz;
+						for (uint32_t i = 0; i < outputTimes; i++) {
+							hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
+							// if (hx_hid_set_output(HID_FW_UPDATE_ID, 1, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
+							if (hx_hid_set_feature(HID_FW_UPDATE_ID, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
+								// cmd failed, go out
+								hx_printf("send firmware trunk: %d/%d of %d kb failed!\n", i + 1, outputTimes, writeSize);
+								ret = -EIO;
+								lastError = FWUP_ERROR_FW_TRANSFER;
+								goto HID_FW_UPDATE_END;
+							}
+							usleep(100);
+						}
+						hx_printf("\n");
+					}
+					cmd = 0xB1;
+					if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 30,
+						 recevied_data, &nDataRecevied)) {
+						if (nDataRecevied > 0) {
+							hx_printf("polling for 0xB1, but result(0x%X) not expected!\n", recevied_data[0]);
+							if (recevied_data[0] == FWUP_ERROR_BL) {
+								hx_printf("Update failed\n");
+							} else if (recevied_data[0] == FWUP_ERROR_PW) {
+								hx_printf("Update failed, reason PW\n");
+							} else if (recevied_data[0] == FWUP_ERROR_ERASE_FLASH) {
+								hx_printf("Update failed, reason erase flash\n");
+							} else if (recevied_data[0] == FWUP_ERROR_FLASH_PROGRAMMING) {
+								hx_printf("Update failed, flash programming\n");
+							}
+							lastError = recevied_data[0];
+
+							ret = -EIO;
+							goto HID_FW_UPDATE_END;
+						}
+						hx_printf("Polling for B1 timeout!\n");
+						lastError = FWUP_ERROR_POLLING_TIMEOUT;
+						ret = -EIO;
+						goto HID_FW_UPDATE_END;
+					} else {
+						hx_printf("Update succeed!\n");
+						ret = 0;
+						usleep(500 * 1000);
+						opt_data.options |= OPTION_REBIND;
+						dinfo.pid = opt_data.pid;
+						dinfo.vid = opt_data.vid;
+						lastError = FWUP_ERROR_NO_ERROR;
+					}
+				} else {
+					hx_printf("Version identical, update no go!\n");
+				}
+			}
+		}
+	} else {
+		himax_free_fw(&hxfw);
+		lastError = FWUP_ERROR_NO_DEVICE;
+		return -ENODEV;
+	}
+HID_FW_UPDATE_END:
+	hx_hid_close();
+	himax_free_fw(&hxfw);
+LOAD_FW_FAILED:
+	return ret;
+}
+
+int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	hx_hid_info oinfo;
+	hx_hid_info ninfo;
+	bool bOinfoValid = false;
+	bool bNinfoValid = false;
+	bool bGoUpdate = false;
+	HXFW hxfw;
+	time_t start, now;
+	uint8_t recevied_data[2] = {0};
+	int nDataRecevied = 0;
+	const uint32_t pollingInterval = 10;
+	uint32_t writeSize;
+	uint32_t fwStartLoc;
+	uint32_t outputTimes;
+	const uint8_t bl_update_cmd = 0x77;
+	const uint32_t main_code_seg_sz = 240 * 1024;
+	const uint32_t bl_sz = 12 * 1024;
+	int ret = 0;
+	int fw_entries = 0;
+	hx_hid_fw_unit_t* fw_entry_table = NULL;
+	lastError = FWUP_ERROR_NO_ERROR;
+
+	if (himax_load_fw(opt_data.fw_path, &hxfw) != 0) {
+		ret = -ENODATA;
+		lastError = FWUP_ERROR_LOAD_FW_BIN;
+		goto LOAD_FW_FAILED;
+	}
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			int sz = hx_hid_get_size_by_id(HID_FW_UPDATE_ID);
+			bool bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
+			if ((sz > 0) && bHandshakePresent) {
+				bGoUpdate = true;
+				bool useFwInfoEntries = true;
+
+				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
+					if ((oinfo.passwd[0] != 0xA5) || (oinfo.passwd[1] != 0x5A)) {
+						useFwInfoEntries = false;
+					} else {
+						fw_entries = calculateMappingEntries(&oinfo.bl_mapping, sizeof(oinfo.bl_mapping));
+						if (fw_entries > 0) {
+							useFwInfoEntries = true;
+							fw_entry_table = &oinfo.bl_mapping;
+						}
+					}
+					bOinfoValid = true;
+				} else {
+					bOinfoValid = false;
+					useFwInfoEntries = false;
+				}
+
+				if (!useFwInfoEntries && bOinfoValid) {
+					for (int i = 0; i < sizeof(g_ic_bl_code_mapping_table)/sizeof(hx_ic_fw_layout_mapping_t); i++) {
+						if (memcmp(g_ic_bl_code_mapping_table[i].ic_sign_2, oinfo.ic_sign_2, sizeof(oinfo.ic_sign_2)) == 0) {
+							fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)g_ic_bl_code_mapping_table[i].fw_table, sizeof(hx_hid_fw_unit_t)* 1);
+							fw_entry_table = (hx_hid_fw_unit_t *)g_ic_bl_code_mapping_table[i].fw_table;
+							break;
+						}
+					}
+				}
+
+				if (fw_entries == 0) {
+					fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fw_bl_121A, sizeof(hx_hid_fw_unit_t)* 1);
+					fw_entry_table = (hx_hid_fw_unit_t *)fw_bl_121A;
+				}
+
+				if (bGoUpdate) {
+					uint8_t cmd = 0;
+
+					if(hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) == 0)
+						hx_printf("ID %02X read %02X\n", HID_FW_UPDATE_HANDSHAKING_ID, cmd);
+
+					cmd = bl_update_cmd;
+					if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) != 0) {
+						hx_printf("Initial HID FW update failed!\n");
+						lastError = FWUP_ERROR_INITIAL;
+						goto HID_BL_UPDATE_END;
+					} else {
+						hx_printf("Initializing HID FW update....\n");
+						// usleep(1500 * 1000);
+					}
+					for (int i = 0; i < fw_entries; i++) {
+						start = time(NULL);
+
+POLL_BL_AGAIN:
+						cmd = fw_entry_table[i].cmd;
+						if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
+							recevied_data, &nDataRecevied)) {
+							if (nDataRecevied > 0) {
+								if ((recevied_data[0] == FWUP_ERROR_MCU_A0)||(recevied_data[0] == FWUP_ERROR_MCU_00)) {
+									now = time(NULL);
+									if (now - start >= 7) {
+										lastError = recevied_data[0];
+										goto POLL_BL_FAILED;
+									}
+									usleep(pollingInterval * 1000);
+									goto POLL_BL_AGAIN;
+								} else if (recevied_data[0] == FWUP_ERROR_NO_BL) {
+									hx_printf("Can't update Main code due to no Bootloader(0x%02X)!\n", recevied_data[0]);
+								} else if (recevied_data[0] == FWUP_ERROR_NO_MAIN) {
+									hx_printf("Can't update Bootloader due to no Main code(0x%02X)!\n", recevied_data[0]);
+								}
+								hx_printf("polling for 0x%X, but result(0x%X) not expected!\n", cmd, recevied_data[0]);
+								ret = -EIO;
+								lastError = recevied_data[0];
+								goto HID_BL_UPDATE_END;
+							}
+POLL_BL_FAILED:
+							hx_printf("Polling for 0x%X timeout!\n", cmd);
+							lastError = FWUP_ERROR_POLLING_TIMEOUT;
+							ret = -EIO;
+							goto HID_BL_UPDATE_END;
+						}
+
+						writeSize = fw_entry_table[i].unit_sz * 1024;
+						fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
+						outputTimes = writeSize / sz;
+						for (uint32_t i = 0; i < outputTimes; i++) {
+							hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
+							// if (hx_hid_set_output(HID_FW_UPDATE_ID, 1, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
+							if (hx_hid_set_feature(HID_FW_UPDATE_ID, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
+								// cmd failed, go out
+								hx_printf("send firmware trunk: %d/%d of %d kb failed!\n", i + 1, outputTimes, writeSize);
+								ret = -EIO;
+								lastError = FWUP_ERROR_FW_TRANSFER;
+								goto HID_BL_UPDATE_END;
+							}
+							usleep(100);
+						}
+						hx_printf("\n");
+					}
+					cmd = 0xB1;
+					if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 30,
+						 recevied_data, &nDataRecevied)) {
+						if (nDataRecevied > 0) {
+							hx_printf("polling for 0xB1, but result(0x%X) not expected!\n", recevied_data[0]);
+							if (recevied_data[0] == FWUP_ERROR_BL) {
+								hx_printf("Update failed\n");
+							} else if (recevied_data[0] == FWUP_ERROR_PW) {
+								hx_printf("Update failed, wrong PW\n");
+							} else if (recevied_data[0] == FWUP_ERROR_ERASE_FLASH) {
+								hx_printf("Update failed, erase flash\n");
+							} else if (recevied_data[0] == FWUP_ERROR_FLASH_PROGRAMMING) {
+								hx_printf("Update failed, flash programming\n");
+							}
+							lastError = recevied_data[0];
+							ret = -EIO;
+							goto HID_BL_UPDATE_END;
+						}
+						hx_printf("Polling for B1 timeout!\n");
+						lastError = FWUP_ERROR_POLLING_TIMEOUT;
+						ret = -EIO;
+						goto HID_BL_UPDATE_END;
+					} else {
+						hx_printf("Bootloader update succeed!\n");
+						ret = 0;
+						usleep(500 * 1000);
+						opt_data.options |= OPTION_REBIND;
+						dinfo.pid = opt_data.pid;
+						dinfo.vid = opt_data.vid;
+						lastError = FWUP_ERROR_NO_ERROR;
+					}
+				}
+			}
+		}
+	} else {
+		himax_free_fw(&hxfw);
+		lastError = FWUP_ERROR_NO_DEVICE;
+		return -ENODEV;
+	}
+HID_BL_UPDATE_END:
+	hx_hid_close();
+	himax_free_fw(&hxfw);
+
+LOAD_FW_FAILED:
+	return ret;
+}
+
+int hid_set_data_type(OPTDATA& opt_data)
+{
+	int ret;
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		uint32_t type = opt_data.param.b[0];
+#if 0
+		#define fw_addr_raw_out_sel                 0x100072EC
+		#define HID_RAW_OUT_DELTA					0x29
+
+		ret = hx_hid_write_reg(fw_addr_raw_out_sel, HID_RAW_OUT_DELTA, opt_data);
+		if (ret < 0) {
+			hx_hid_close();
+			return -EIO;
+		}
+#else
+		ret = hx_hid_set_feature(HID_TOUCH_MONITOR_SEL_ID, (uint8_t *)&type, 4);
+		if (ret < 0) {
+			hx_hid_close();
+			return -EIO;
+		}
+#endif
+		hx_hid_close();
+		return 0;
+	} else {
+		return -ENODEV;
+	}
+}
+
+int hid_print_report_descriptor(OPTDATA& opt_data)
+{
+	int ret;
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		ret = hx_hid_print_RD();
+		if (ret < 0) {
+			hx_hid_close();
+			return -EIO;
+		}
+
+		return 0;
+	} else {
+		return -ENODEV;
+	}
+}
+
+static int hx_hid_parse_criteria_file(OPTDATA& opt_data, hx_criteria_t** result, uint32_t* nKeyword)
+{
+	static hx_criteria_t hx_criteria_table[] = {
+		{
+			.keyword = "RAW_BS_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 8,
+		},
+		{
+			.keyword = "NOISE_BS_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 8,
+		},
+		{
+			.keyword = "ACT_IDLE_BS_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "LP_BS_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "LP_IDLE_BS_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "NORMAL_N_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 60,
+		},
+		{
+			.keyword = "IDLE_N_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 10,
+		},
+		{
+			.keyword = "LP_RAW_N_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "LP_NOISE_N_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "LP_IDLE_RAW_N_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "LP_IDLE_NOISE_N_FRAME",
+			.activated = false,
+			.type = ONE_PARAM,
+			.default_value = 1,
+		},
+		{
+			.keyword = "CRITERIA_RAW_BPN_MIN",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 5,
+		},
+		{
+			.keyword = "CRITERIA_RAW_BPN_MAX",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 90,
+		},
+		{
+			.keyword = "CRITERIA_RAW_MIN",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = -32768,
+		},
+		{
+			.keyword = "CRITERIA_RAW_MAX",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 32768,
+		},
+		{
+			.keyword = "CRITERIA_SHORT_MIN",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 0,
+		},
+		{
+			.keyword = "CRITERIA_SHORT_MAX",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 150,
+		},
+		{
+			.keyword = "CRITERIA_OPEN_MIN",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 0,
+		},
+		{
+			.keyword = "CRITERIA_OPEN_MAX",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 500,
+		},
+		{
+			.keyword = "CRITERIA_MICRO_OPEN_MIN",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 0,
+		},
+		{
+			.keyword = "CRITERIA_MICRO_OPEN_MAX",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 150,
+		},
+		{
+			.keyword = "CRITERIA_NOISE_WT_MIN",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = -200,
+		},
+		{
+			.keyword = "CRITERIA_NOISE_WT_MAX",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 300,
+		},
+		{
+			.keyword = "CRITERIA_NOISE",
+			.activated = false,
+			.type = MORE_PARAM,
+			.default_value = 0,
+		}
+	};
+	FILE *criteria_fp;
+	const int max_rx_count = 128;
+	const int max_tx_count = 128;
+	char line[8 * max_rx_count + 256] = {0};
+	char *tok = NULL;
+	bool keyword_match;
+	unsigned int current_idx;
+	int tok_idx;
+	uint32_t rx_cnt;
+
+	/* Clean up */
+	for (unsigned int i = 0; i < sizeof(hx_criteria_table)/sizeof(hx_criteria_t); i++) {
+		hx_criteria_table[i].activated = false;
+	}
+
+	criteria_fp = fopen(opt_data.criteria_path, "r");
+	if (criteria_fp != NULL) {
+		current_idx = 0;
+		while (fgets(line, sizeof(line), criteria_fp) != NULL) {
+			tok = strtok(line, ",");
+			if (tok == NULL) {
+				continue;
+			}
+			tok_idx = 0;
+START_KEYWORD_MATCH:
+			keyword_match = false;
+			for (unsigned int i = 0; i < sizeof(hx_criteria_table)/sizeof(hx_criteria_t); i++) {
+				if (strcmp(tok, hx_criteria_table[i].keyword/*, strlen(hx_criteria_table[i].keyword) + 1*/) == 0) {
+					keyword_match = true;
+					current_idx = i;
+					break;
+				}
+			}
+
+			if (keyword_match) {
+				switch (hx_criteria_table[current_idx].type) {
+					case ONE_PARAM:
+						tok = strtok(NULL, ",");
+						if (tok != NULL) {
+							tok_idx++;
+							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].default_value)) > 0) {
+								hx_criteria_table[current_idx].activated = true;
+							} else {
+								hx_printf("Reading 1 parameter failed!\n");
+							}
+						} else {
+							hx_printf("Parsing parameter failed!\n");
+						}
+						break;
+					case MORE_PARAM:
+						hx_criteria_table[current_idx].param_data = NULL;
+						hx_criteria_table[current_idx].param_data = (int32_t *)malloc(max_rx_count * max_tx_count * sizeof(int32_t));
+						if (hx_criteria_table[current_idx].param_data == NULL) {
+							hx_printf("Memoey insufficient!\n");
+							break;
+						}
+						hx_criteria_table[current_idx].param_count = 0;
+						tok = strtok(NULL, ",");
+						rx_cnt = 0;
+						while (tok != NULL) {
+							tok_idx++;
+
+							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
+								hx_criteria_table[current_idx].param_count++;
+								rx_cnt++;
+							}
+
+							tok = strtok(NULL, ",");
+						};
+						if (hx_criteria_table[current_idx].param_count > 0) {
+							hx_criteria_table[current_idx].rx = rx_cnt;
+							hx_criteria_table[current_idx].tx = 1;
+							hx_criteria_table[current_idx].activated = true;
+							rx_cnt = 0;
+						} else {
+							free(hx_criteria_table[current_idx].param_data);
+							hx_criteria_table[current_idx].param_data = NULL;
+							break;
+						}
+
+						while (fgets(line, sizeof(line), criteria_fp) != NULL) {
+							if(line[0] != ',') {
+								tok = strtok(line, ",");
+								if (tok == NULL)
+									continue;
+								tok_idx = 0;
+								goto START_KEYWORD_MATCH;
+							}
+							tok = strtok(line + 1, ",");
+							if (tok == NULL)
+								continue;
+							tok_idx = 0;
+							// rx_cnt = 0;
+							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
+								hx_criteria_table[current_idx].param_count++;
+								rx_cnt++;
+
+								tok = strtok(NULL, ",");
+								while (tok != NULL) {
+									tok_idx++;
+
+									if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
+										hx_criteria_table[current_idx].param_count++;
+										rx_cnt++;
+									}
+
+									tok = strtok(NULL, ",");
+								};
+								if (rx_cnt > 0) {
+									hx_criteria_table[current_idx].tx++;
+									if (rx_cnt != hx_criteria_table[current_idx].rx)
+										hx_printf("Warning : rx count not equal!(%d != %d)\n", hx_criteria_table[current_idx].rx, rx_cnt);
+									rx_cnt = 0;
+								} else {
+									hx_printf("Warning : not value parsed!\n");
+								}
+							} else {
+								hx_printf("Warning : not value parsed!\n");
+							}
+
+						};
+
+						break;
+					default:
+						hx_printf("No match parameter type! Ignore.\n");
+				}
+			}
+		}
+#if 0
+		for (int i = 0; i < sizeof(hx_criteria_table)/sizeof(hx_criteria_t); i++) {
+			if (hx_criteria_table[i].activated) {
+				hx_printf("%s found\n", hx_criteria_table[i].keyword);
+				if (hx_criteria_table[i].type == ONE_PARAM) {
+					hx_printf("critera : %d\n", hx_criteria_table[i].default_value);
+				} else if (hx_criteria_table[i].type == MORE_PARAM) {
+					hx_printf("rx : %d, tx : %d, value count : %d",
+						hx_criteria_table[i].rx, hx_criteria_table[i].tx,
+						hx_criteria_table[i].param_count);
+					for (int j = 0; j < hx_criteria_table[i].param_count; j++) {
+						if ((j % hx_criteria_table[i].rx) == 0) {
+							hx_printf("\n[TX%02d]:", (j / hx_criteria_table[i].rx)+1);
+						}
+						if (j != (hx_criteria_table[i].param_count - 1))
+							hx_printf(" %5d,", hx_criteria_table[i].param_data[j]);
+						else
+							hx_printf(" %5d", hx_criteria_table[i].param_data[j]);
+					}
+					hx_printf("\n");
+				}
+			}
+		}
+#endif
+		fclose(criteria_fp);
+		*result = hx_criteria_table;
+		*nKeyword = sizeof(hx_criteria_table)/sizeof(hx_criteria_t);
+		return 0;
+	} else {
+		*result = NULL;
+		*nKeyword = 0;
+		return -EIO;
+	}
+}
+
+int hid_self_test_by_criteria_file(OPTDATA& opt_data)
+{
+	typedef struct hid_self_test_support_item {
+		const char *name;
+		bool hasLowerBond;
+		const char *lower_bond_keyword;
+		bool hasUpperBond;
+		const char *upper_bond_keyword;
+		uint32_t hid_switch;
+		bool testResult;
+		bool activated;
+		int32_t fail_rx;
+		int32_t fail_tx;
+		int32_t fail_v;
+	} hid_self_test_support_item_t;
+	static hid_self_test_support_item_t test_items[] = {
+		{
+			.name = "Short",
+			.hasLowerBond = true,
+			.lower_bond_keyword = "CRITERIA_SHORT_MIN",
+			.hasUpperBond = true,
+			.upper_bond_keyword = "CRITERIA_SHORT_MAX",
+			.hid_switch = HID_SELF_TEST_SHORT,
+			.testResult = false,
+		},
+		{
+			.name = "Open",
+			.hasLowerBond = true,
+			.lower_bond_keyword = "CRITERIA_OPEN_MIN",
+			.hasUpperBond = true,
+			.upper_bond_keyword = "CRITERIA_OPEN_MAX",
+			.hid_switch = HID_SELF_TEST_OPEN,
+			.testResult = false,
+		},
+		{
+			.name = "Micro Open",
+			.hasLowerBond = true,
+			.lower_bond_keyword = "CRITERIA_MICRO_OPEN_MIN",
+			.hasUpperBond = true,
+			.upper_bond_keyword = "CRITERIA_MICRO_OPEN_MAX",
+			.hid_switch = HID_SELF_TEST_MICRO_OPEN,
+			.testResult = false,
+		},
+		{
+			.name = "Rawdata",
+			.hasLowerBond = true,
+			.lower_bond_keyword = "CRITERIA_RAW_MIN",
+			.hasUpperBond = true,
+			.upper_bond_keyword = "CRITERIA_RAW_MAX",
+			.hid_switch = HID_SELF_TEST_RAWDATA,
+			.testResult = false,
+		},
+		{
+			.name = "Noise",
+			.hasLowerBond = false,
+			.lower_bond_keyword = NULL,
+			.hasUpperBond = true,
+			.upper_bond_keyword = "CRITERIA_NOISE",
+			.hid_switch = HID_SELF_TEST_NOISE,
+			.testResult = false,
+		}
+	};
+	hx_hid_info info;
+	const unsigned int header = 5;
+	int ret = 0;
+	const uint32_t pollingInterval = 100;
+	hx_criteria_t *hx_criteria_table = NULL;
+	uint32_t nKeyword;
+	uint8_t *frame = NULL;
+	uint8_t *cmd = NULL;
+	uint8_t *recv = NULL;
+	int nDataRecv = 0;
+	const int retry_limit = 500;
+	int retry_cnt = 0;
+	int sz;
+	bool bLowerBondFound;
+	int32_t *lowerBond_data;
+	bool bUpperBondFound;
+	int32_t *upperBond_data;
+	bool bSelfTestCompleted = false;
+	uint8_t lastState;
+	union { int32_t i; uint16_t s[2]; } usdata;
+	int debug_start_loc;
+	int rx_num;
+	int tx_num;
+
+	if (hx_hid_parse_criteria_file(opt_data, &hx_criteria_table, &nKeyword) == 0) {
+		if (hx_scan_open_hidraw(opt_data) == 0) {
+			if (hx_hid_parse_RD_for_idsz() == 0) {
+				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
+					rx_num = info.rx;
+					tx_num = info.tx;
+
+					sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+					if (sz > 0) {
+						frame = (uint8_t *)malloc(sz);
+						if (frame == NULL) {
+							ret = -ENOMEM;
+							goto CRITERIA_NO_MEM_FAILED;
+						}
+						int stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
+						if (stSz > 0) {
+							cmd = (uint8_t *)malloc(stSz);
+							recv = (uint8_t *)malloc(stSz);
+							if ((cmd == NULL) || (recv == NULL)) {
+								ret = -ENOMEM;
+								goto CRITERIA_NO_MEM_FAILED;
+							}
+
+							for (uint32_t i = 0; i < sizeof(test_items)/sizeof(hid_self_test_support_item_t); i++) {
+								bLowerBondFound = false;
+								lowerBond_data = NULL;
+								bUpperBondFound = false;
+								upperBond_data = NULL;
+								if (test_items[i].hasLowerBond) {
+									for (unsigned int j = 0; j < nKeyword; j++) {
+										if (strcmp(hx_criteria_table[j].keyword, test_items[i].lower_bond_keyword/*, strlen(test_items[i].lower_bond_keyword)*/) == 0) {
+											if (hx_criteria_table[j].activated && (hx_criteria_table[j].rx == rx_num) && (hx_criteria_table[j].tx == tx_num)) {
+												bLowerBondFound = hx_criteria_table[j].activated;
+												if (bLowerBondFound)
+													lowerBond_data = hx_criteria_table[j].param_data;
+											}
+										}
+									}
+									if (!bLowerBondFound) {
+										hx_printf("%s: Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", test_items[i].name, rx_num, tx_num);
+										goto NEXT_ITEM;
+									}
+								}
+
+								if (test_items[i].hasUpperBond) {
+									for (unsigned int j = 0; j < nKeyword; j++) {
+										if (strcmp(hx_criteria_table[j].keyword, test_items[i].upper_bond_keyword/*, strlen(test_items[i].upper_bond_keyword)*/) == 0) {
+											if (hx_criteria_table[j].activated && (hx_criteria_table[j].rx == rx_num) && (hx_criteria_table[j].tx == tx_num)) {
+												bUpperBondFound = hx_criteria_table[j].activated;
+												if (bUpperBondFound)
+													upperBond_data = hx_criteria_table[j].param_data;
+											}
+										}
+									}
+									if (!bUpperBondFound) {
+										hx_printf("%s: Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", test_items[i].name, rx_num, tx_num);
+										goto NEXT_ITEM;
+									}
+								}
+								if ((bLowerBondFound == test_items[i].hasLowerBond) && (bUpperBondFound == test_items[i].hasUpperBond)) {
+									test_items[i].activated = true;
+								} else {
+									test_items[i].activated = false;
+								}
+
+								if (!test_items[i].activated) {
+									hx_printf("Required boundary condition not found, ignore %s test.\n", test_items[i].name);
+									goto NEXT_ITEM;
+								}
+
+								hx_printf("start %s test(cmd : 0x%X):\n", test_items[i].name, test_items[i].hid_switch);
+								// if ((test_items[i].hid_switch == HID_SELF_TEST_RAWDATA) || (test_items[i].hid_switch == HID_SELF_TEST_NOISE)) {
+								// 	cmd[0] = 0x01;
+								// 	ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+								// 	if (ret == 0) {
+								// 		hx_printf("Reset self test succeed.\n");
+								// 	} else {
+								// 		hx_printf("Reset self test failed.\n");
+								// 	}
+								// 	usleep(500*1000);
+								// }
+								memset(cmd, 0, stSz);
+								cmd[0] = test_items[i].hid_switch;
+								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+								if (ret == 0) {
+									nDataRecv = 0;
+									cmd[0] = 0xFF;
+									lastState = 0x0;
+									bSelfTestCompleted = false;
+									for (retry_cnt = 0; retry_cnt < retry_limit; retry_cnt++) {
+										if (!pollingForResult(HID_SELF_TEST_ID, cmd, stSz, pollingInterval, 7,	recv, &nDataRecv)) {
+											if (nDataRecv == 0) {
+												hx_printf("polling result recv nothing.\n");
+												//continue;
+											} else if (nDataRecv > 0) {
+												if ((recv[0] & 0xF0) == 0xF0) {
+													switch (recv[0]) {
+													case 0xF1:
+														if (lastState != recv[0])
+															hx_printf("self test init stage.\n");
+														break;
+													case 0xF2:
+														if (lastState != recv[0])
+															hx_printf("self test started.\n");
+														break;
+													case 0xF3:
+														if (lastState != recv[0])
+															hx_printf("self test on going.\n");
+														break;
+													case 0xFF:
+														if (lastState != recv[0])
+															hx_printf("self test finish.\n");
+														break;
+													default:
+														hx_printf("self test undefined stage.(0x%02X)\n", recv[0]);
+													};
+													lastState = recv[0];
+													usleep(16 * 1000);
+													// continue;
+												} else if ((recv[0] & 0xF0) == 0xE0) {
+													switch (recv[0]) {
+													case 0xE1:
+														hx_printf("self test not support!\n");
+														break;
+													case 0xEF:
+														hx_printf("self test error!\n");
+														break;
+													default:
+														hx_printf("self test undefined error(%02X)!\n", recv[0]);
+													};
+													goto NEXT_ITEM;
+												} else {
+													hx_printf("self test return undefined value!(0x%02X)\n", recv[0]);
+													goto NEXT_ITEM;
+												}
+											} else {
+												hx_printf("shouldn't be here!!!\n");
+											}
+										} else {
+											//test completed
+											bSelfTestCompleted = true;
+											hx_printf("Self test completed.\n");
+											break;
+										}
+									}
+
+									if (retry_cnt == retry_limit) {
+										hx_printf("Couldn't get %s result, ignore this test item!\n", test_items[i].name);
+										goto NEXT_ITEM;
+									}
+
+									retry_cnt = 0;
+									while (retry_cnt++ < retry_limit) {
+										ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
+										if ((ret == 0) && (frame[1] == 0x5A) && (frame[2] == 0xA5)) {
+											test_items[i].testResult = true;
+											hx_printf("       ");
+											for(int j = 0; j < rx_num; j++) {
+												hx_printf(" RX[%02d]", j + 1);
+											}
+											for (int j = 0; j < (rx_num * tx_num); j++) {
+												if ((j % rx_num) == 0)
+													hx_printf("\nTX[%02d]:", j/rx_num + 1);
+												usdata.i =
+													(int16_t)frame[header + j * 2] + (((int16_t)frame[header + j * 2 + 1]) << 8);
+												if (bSelfTestCompleted && (test_items[i].hid_switch == HID_SELF_TEST_NOISE))
+													usdata.i = *(int16_t *)&(usdata.s[0]);
+												if ((test_items[i].hasUpperBond) && bUpperBondFound) {
+													if (usdata.i > upperBond_data[j]) {
+														test_items[i].testResult = false;
+														test_items[i].fail_rx = (j % rx_num) + 1;
+														test_items[i].fail_tx = j/rx_num + 1;
+														test_items[i].fail_v = usdata.i;
+													} else
+														test_items[i].testResult &= true;
+												}
+												if ((test_items[i].hasLowerBond) && bLowerBondFound) {
+													if (usdata.i < lowerBond_data[j]) {
+														test_items[i].testResult = false;
+														test_items[i].fail_rx = (j % rx_num) + 1;
+														test_items[i].fail_tx = j/rx_num + 1;
+														test_items[i].fail_v = usdata.i;
+													} else
+														test_items[i].testResult &= true;
+												}
+												hx_printf(" %6d", (usdata.i));
+											}
+
+											debug_start_loc = header + (rx_num * tx_num) * 2;
+											for (unsigned int j = 0; j < (rx_num + tx_num); j++) {
+												if ((j % rx_num) == 0)
+													hx_printf("\n DEBUG:");
+												hx_printf(" %6d", ((int16_t)frame[debug_start_loc + j * 2]) + (((int16_t)frame[debug_start_loc + j * 2 + 1]) << 8));
+											}
+											hx_printf("\n");
+											break;
+										} else {
+											/* hx_printf("header : %02X %02X %02X %02X %02X\nData:\n",
+												frame[0], frame[1], frame[2], frame[3], frame[4]); */
+											usleep(16 * 1000);
+										}
+									};
+									if (bSelfTestCompleted) {
+										if (retry_cnt == retry_limit) {
+											hx_printf("Failed to get data for compare!\n");
+											goto NEXT_ITEM;
+										} else {
+											hx_printf("Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
+											if (!test_items[i].testResult) {
+												hx_printf("(rx:%d, tx:%d) : %d\n",
+													test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
+											}
+										}
+									}
+								} else {
+									hx_printf("Failed to issue self test command.\n");
+								}
+NEXT_ITEM:
+								usleep(0);
+							}
+							cmd[0] = 0x01;
+							ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+							if (ret == 0) {
+								hx_printf("Reset self test....\n");
+							} else {
+								hx_printf("Reset self test failed!\n");
+							}
+						}
+					}
+				}
+				for (uint32_t i = 0; i < sizeof(test_items)/sizeof(hid_self_test_support_item_t); i++) {
+					if (test_items[i].activated) {
+						hx_printf("%s test result : %s! ", test_items[i].name, test_items[i].testResult?"Pass":"Fail");
+						if (!test_items[i].testResult) {
+							hx_printf("fail sample (rx : %d, tx : %d) : %d\n", test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
+						} else {
+							hx_printf("\n");
+						}
+					}
+				}
+			} else {
+				hx_printf("Id parsing failed, return!\n");
+				ret = -ENODATA;
+			}
+
+CRITERIA_NO_MEM_FAILED:
+			free(frame);
+			free(cmd);
+			free(recv);
+			hx_hid_close();
+		} else {
+			hx_printf("Failed to open HIDRAW!\n");
+			return -ENODEV;
+		}
+		for (unsigned int i = 0; i < nKeyword; i++) {
+			if (hx_criteria_table[i].activated && (hx_criteria_table[i].type == MORE_PARAM)) {
+				free(hx_criteria_table[i].param_data);
+			}
+		}
+
+		return ret;
+	} else {
+		hx_printf("%s open failed!\n");
+
+		return -EIO;
+	}
+}
+
+int hid_show_diag(OPTDATA& opt_data)
+{
+	hx_hid_info info;
+	const unsigned int header = 5;
+	int ret;
+	bool bSelfTestCompleted = false;
+	const uint32_t pollingInterval = 100;
+	bool bTestPass = true;
+	struct {
+		int32_t rx;
+		int32_t tx;
+		int32_t v;
+	} fail_p;
+	uint8_t *frame = NULL;
+	uint8_t *cmd = NULL;
+	uint8_t *recv = NULL;
+	int nDataRecv;
+	const int retry_limit = 20;
+	int retry_cnt;
+	union { int32_t i; uint16_t s[2]; } usdata;
+	int debug_start_loc;
+	int stSz;
+	int sz;
+	int rx_num;
+	int tx_num;
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
+				rx_num = info.rx;
+				tx_num = info.tx;
+
+				sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+				if (sz > 0) {
+					frame = (uint8_t *)malloc(sz);
+					if (frame == NULL)
+						goto DIAG_FUNC_END;
+					if (opt_data.options & OPTION_HID_SELF_TEST) {
+						int stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
+						if (stSz > 0) {
+							cmd = (uint8_t *)malloc(stSz);
+							if (cmd != NULL) {
+								cmd[0] = opt_data.param.i;
+								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+
+								if (ret == 0) {
+									recv = (uint8_t *)malloc(stSz);
+									nDataRecv = 0;
+									cmd[0] = 0xFF;
+POLL_AGAIN:
+									if (!pollingForResult(HID_SELF_TEST_ID, cmd, stSz, pollingInterval, 7,	recv, &nDataRecv)) {
+										if (nDataRecv == 0) {
+											goto POLL_AGAIN;
+										} else if (nDataRecv > 0) {
+											if ((recv[0] & 0xF0) == 0xF0) {
+												usleep(16 * 1000);
+												goto POLL_AGAIN;
+											}
+										}
+									} else {
+										bSelfTestCompleted = true;
+									}
+									free(recv);
+								}
+								free(cmd);
+							}
+						}
+					}
+					if (((opt_data.options & OPTION_HID_SELF_TEST) > 0) && !bSelfTestCompleted) {
+						goto DIAG_FUNC_END;
+					}
+
+					retry_cnt = 0;
+					while (retry_cnt++ < retry_limit) {
+						ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
+						if (ret == 0) {
+							hx_printf("header : %02X %02X %02X %02X %02X\nData:\n",
+								frame[0], frame[1], frame[2], frame[3], frame[4]);
+							if ((frame[1] == 0x5A) && (frame[2] == 0xA5)) {
+								hx_printf("       ");
+								for(int i = 0; i < rx_num; i++) {
+									hx_printf(" RX[%02d]", i + 1);
+								}
+								for (int i = 0; i < (rx_num * tx_num); i++) {
+									if ((i % rx_num) == 0)
+										hx_printf("\nTX[%02d]:", i/rx_num + 1);
+
+									usdata.i =
+										(int16_t)frame[header + i * 2] + (((int16_t)frame[header + i * 2 + 1]) << 8);
+									if (bSelfTestCompleted && (opt_data.param.i == 0x22))
+										usdata.i = *(int16_t *)&(usdata.s[0]);
+									if ((usdata.i > opt_data.self_test_spec_max) ||
+										(usdata.i < opt_data.self_test_spec_min)) {
+										bTestPass = false;
+										fail_p.rx = (i % rx_num) + 1;
+										fail_p.tx = i/rx_num + 1;
+										fail_p.v = usdata.i;
+									}
+									hx_printf(" %6d", (usdata.i));
+								}
+
+								debug_start_loc = header + (rx_num * tx_num) * 2;
+								for (int i = 0; i < (rx_num + tx_num); i++) {
+									if ((i % rx_num) == 0)
+										hx_printf("\n DEBUG:");
+									hx_printf(" %6d", ((int16_t)frame[debug_start_loc + i * 2]) + (((int16_t)frame[debug_start_loc + i * 2 + 1]) << 8));
+								}
+								hx_printf("\n");
+								break;
+							} else {
+								usleep(16 * 1000);
+							}
+						} else {
+							break;
+						}
+					}
+
+					if (opt_data.options & OPTION_HID_SELF_TEST) {
+						if (bSelfTestCompleted) {
+							if (bTestPass) {
+								hx_printf("Self test of 0x%02X PASS!\n", opt_data.param.i);
+							} else {
+								hx_printf("Self test of 0x%02X Failed! (rx:%d, tx:%d) : %d\n",
+								opt_data.param.i, fail_p.rx, fail_p.tx, fail_p.v);
+							}
+						}
+
+						stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
+						if (stSz > 0) {
+							cmd = (uint8_t *)malloc(stSz);
+							if (cmd != NULL) {
+								cmd[0] = 0x01;
+								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+								free(cmd);
+							}
+						}
+					}
+
+					free(frame);
+				}
+			}
+		} else {
+			hx_printf("ID parsing failed, return!\n");
+			ret = -ENODATA;
+		}
+	} else {
+		return -ENODEV;
+	}
+
+DIAG_FUNC_END:
+	hx_hid_close();
+
+	return ret;
+}
+
+struct __attribute__((__packed__)) hid_descriptor_t {
+	uint16_t length;
+	uint16_t bcdVer;
+	uint16_t rd_length;
+	uint8_t rd_addr[2];
+	uint8_t input_addr[2];
+	uint16_t input_length;
+	uint8_t output_addr[2];
+	uint16_t output_length;
+	uint8_t cmd_addr[2];
+	uint8_t data_addr[2];
+	uint16_t vendor_id;
+	uint16_t product_id;
+	uint16_t version;
+	uint32_t reserved;
+} hid_descriptor;
+
+int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
+{
+	int ret;
+	uint8_t read_back[4] = {0};
+	hx_hid_info oinfo;
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			/* if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0)
+				hx_printf("got dev info\n"); */
+
+			int sz = hx_hid_get_size_by_id(HID_INPUT_RD_EN_ID);
+			if (sz > 0) {
+				uint32_t en = opt_data.input_en.b[0];
+				ret = hx_hid_set_feature(HID_INPUT_RD_EN_ID, (uint8_t *)&en, sz);
+				if (ret < 0) {
+					ret = -EIO;
+					goto END_SET_RD_EN;
+				}
+				hx_printf("set ID %d to %d\n", HID_INPUT_RD_EN_ID, en);
+				ret = hx_hid_get_feature(HID_INPUT_RD_EN_ID, read_back, sz);
+				if (ret < 0) {
+					hx_printf("Read back failed!\n");
+					ret = -EIO;
+				} else {
+					hx_printf("Read ID %d back : %X\n", HID_INPUT_RD_EN_ID, read_back[0]);
+					opt_data.options |= OPTION_REBIND;
+					dinfo.vid = opt_data.vid;//0x4858;
+					dinfo.pid = opt_data.pid;//0x121A;
+
+					hx_hid_close();
+
+					/* uint8_t cmd = 0x44;
+					for (int i = 0; i< 20; i++) {
+						hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1);
+						usleep(10 * 1000);
+						hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID,  read_back, 1);
+						usleep(10 * 1000);
+					} */
+					hx_scan_i2c_device(NULL);
+					if (hx_open_i2c_device() == 0) {
+						uint8_t cmd0[] = { 1, 0 };
+						// uint8_t data0[30];
+						// hx_i2c_write(cmd0, sizeof(cmd0));
+						if (hid_i2c_read(cmd0, sizeof(cmd0), (uint8_t *)&hid_descriptor, sizeof(hid_descriptor)) >= 0) {
+							#if 0
+							uint8_t *rd_desc = (uint8_t *)malloc(hid_descriptor.rd_length);
+							if (hid_i2c_read(hid_descriptor.rd_addr, 2, rd_desc, hid_descriptor.rd_length) >= 0) {
+								for (int k = 0; k < hid_descriptor.rd_length;k++) {
+									if (k%4 == 0)
+										hx_printf("\n");
+									hx_printf("%02X ", rd_desc[k]);
+								}
+								hx_printf("\n");
+							}
+							free(rd_desc);
+							#else
+							uint8_t reset_cmd[4];
+							reset_cmd[0] = hid_descriptor.cmd_addr[0];
+							reset_cmd[1] = hid_descriptor.cmd_addr[1];
+							reset_cmd[2] = 0;
+							reset_cmd[3] = 1;
+							hx_printf("send %02X %02X %02X %02X\n", reset_cmd[0], reset_cmd[1], reset_cmd[2], reset_cmd[3]);
+							hid_i2c_write(reset_cmd, sizeof(reset_cmd));
+							usleep(100 * 1000);
+							#endif
+						}
+						// for (int k = 0; k < sizeof(data0);k++)
+							// hx_printf("%02X ", data0[k]);
+						// hx_printf("\n");
+					}
+
+					ret = 0;
+					// himax_scan_device(&opt_data);
+					// himax_sense_on(0);
+					// hx_close_i2c_device();
+					// int hx_hid_read(uint8_t *data, int32_t len);
+					// uint8_t tmp[255] = {0};
+					// tmp[0] = 5;
+					// for (int i = 0; i < 10; i++)
+					// 	hx_hid_read(tmp, sizeof(tmp));
+
+				}
+			} else {
+				ret = -ENOENT;
+			}
+		} else {
+			ret = -ENOENT;
+		}
+END_SET_RD_EN:
+		hx_hid_close();
+		return ret;
+	} else {
+		return -ENODEV;
+	}
+}
+
+int hid_update_DEVINFO(DEVINFO& oinfo)
+{
+	int found = 0;
+	int dev_no = 0;
+	int fd = 0;
+	int ret;
+	static char hidraw_path[64];
+	char dev_dir[] = "/dev";
+	struct hidraw_devinfo dinfo;
+
+	fd = hx_get_hid_fd();
+	if (fd > 0) {
+		ret = ioctl(fd, HIDIOCGRAWINFO, &dinfo);
+		if (ret != 0) {
+			hx_printf("failed to get info from %s!\n", hidraw_path);
+			return -EBADF;
+		} else {
+			oinfo.pid = dinfo.product;
+			oinfo.vid = dinfo.vendor;
+			return 0;
+		}
+	} else {
+		do {
+			memset(hidraw_path, 0, sizeof(hidraw_path));
+			sprintf(hidraw_path, "%s/hidraw%d", dev_dir, dev_no);
+
+			if (access(hidraw_path, F_OK) != 0) {
+				hx_printf("f%s device node not exist!\n", hidraw_path);
+				break;
+			}
+
+			fd = open(hidraw_path, O_RDWR|O_DSYNC);
+			if (fd < 0) {
+				hx_printf("failed to open %s!\n", hidraw_path);
+				dev_no++;
+				continue;
+			}
+
+			ret = ioctl(fd, HIDIOCGRAWINFO, &dinfo);
+			if (ret != 0) {
+				hx_printf("failed to get info from %s!\n", hidraw_path);
+				close(fd);
+
+				break;
+			}
+			// hx_printf("hidraw info, bus type : %d, vendor : 0x%04X, product : 0x%04X\n", \
+				dinfo.bustype, dinfo.vendor, dinfo.product);
+			if (dinfo.vendor == 0x4858) {
+				found = 1;
+				break;
+			} else {
+				close(fd);
+			}
+			dev_no++;
+		} while(dev_no < 10);
+
+		if (found == 0)
+			return -EIO;
+		else {
+			oinfo.pid = dinfo.product;
+			oinfo.vid = dinfo.vendor;
+			close(fd);
+		}
+
+	}
+
+	// hx_printf("Scan HIDRAW device in %s ...\n", dev_dir);
+
+	return 0;
+}
