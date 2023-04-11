@@ -13,9 +13,9 @@ CXXFLAGS	?= -Wall -Os
 CPPOBJS  	= hx_util_src/main.o \
 			hx_util_src/hx_dev_api.o \
 			hx_util_src/hx_i2c_func.o \
+			hx_util_src/hx_hid_func.o
 
 OBJS      	= $(CPPOBJS)
-LIBS		= -pthread -lrt
 
 $(AP): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ $(LIBS) -o $(AP)
