@@ -1425,35 +1425,41 @@ int hid_show_fw_info(OPTDATA& opt_data)
 	if (hx_scan_open_hidraw(opt_data) == 0) {
 		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
 		if (ret == 0) {
-			hx_printf("%s : %02X %02X\n", "passwd", info.passwd[0], info.passwd[1]);
-			hx_printf("%s : %02X %02X\n", "cid", info.cid[0], info.cid[1]);
-			hx_printf("%s : %02X\n", "panel_ver", info.panel_ver);
-			hx_printf("%s : %02X %02X\n", "fw_ver", info.fw_ver[0], info.fw_ver[1]);
-			hx_printf("%s : %C\n", "ic_sign", info.ic_sign);
-			hx_printf("%s : %s\n", "customer", info.customer);
-			hx_printf("%s : %s\n", "project", info.project);
-			hx_printf("%s : %s\n", "fw_major", info.fw_major);
-			hx_printf("%s : %s\n", "fw_minor", info.fw_minor);
-			hx_printf("%s : %s\n", "date", info.date);
-			hx_printf("%s : %s\n", "ic_sign_2", info.ic_sign_2);
-			hx_printf("%s : %02X %02X\n", "vid", info.vid[0], info.vid[1]);
-			hx_printf("%s : %02X %02X\n", "pid", info.pid[0], info.pid[1]);
-			hx_printf("%s : %02X\n", "Config version", info.cfg_version);
-			hx_printf("%s : %02X\n", "Display version", info.disp_version);
-			hx_printf("%s : %d\n", "RX", info.rx);
-			hx_printf("%s : %d\n", "TX", info.tx);
-			hx_printf("%s : %d\n", "YRES ", ((info.yres & 0xFF) << 8 ) + ((info.yres & 0xFF00) >> 8));
-			hx_printf("%s : %d\n", "XRES", ((info.xres & 0xFF) << 8) + ((info.xres & 0xFF00) >> 8));
-			hx_printf("%s : %d\n", "PT_NUM", info.pt_num);
-			hx_printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
-			hx_printf("FW layout : \n");
-			for (int i = 0; i < 9; i++)
+			if ((opt_data.options & OPTION_HID_SHOW_PID_BY_HID_INFO) == OPTION_HID_SHOW_PID_BY_HID_INFO) {
+				printf("%02X%02X\n", info.pid[0], info.pid[1]);
+			} else if ((opt_data.options & OPTION_HID_SHOW_FW_VER_BY_HID_INFO) == OPTION_HID_SHOW_FW_VER_BY_HID_INFO) {
+				printf("%02X%02X\n", info.cid[0], info.cid[1]);
+			} else {
+				hx_printf("%s : %02X %02X\n", "passwd", info.passwd[0], info.passwd[1]);
+				hx_printf("%s : %02X %02X\n", "cid", info.cid[0], info.cid[1]);
+				hx_printf("%s : %02X\n", "panel_ver", info.panel_ver);
+				hx_printf("%s : %02X %02X\n", "fw_ver", info.fw_ver[0], info.fw_ver[1]);
+				hx_printf("%s : %C\n", "ic_sign", info.ic_sign);
+				hx_printf("%s : %s\n", "customer", info.customer);
+				hx_printf("%s : %s\n", "project", info.project);
+				hx_printf("%s : %s\n", "fw_major", info.fw_major);
+				hx_printf("%s : %s\n", "fw_minor", info.fw_minor);
+				hx_printf("%s : %s\n", "date", info.date);
+				hx_printf("%s : %s\n", "ic_sign_2", info.ic_sign_2);
+				hx_printf("%s : %02X %02X\n", "vid", info.vid[0], info.vid[1]);
+				hx_printf("%s : %02X %02X\n", "pid", info.pid[0], info.pid[1]);
+				hx_printf("%s : %02X\n", "Config version", info.cfg_version);
+				hx_printf("%s : %02X\n", "Display version", info.disp_version);
+				hx_printf("%s : %d\n", "RX", info.rx);
+				hx_printf("%s : %d\n", "TX", info.tx);
+				hx_printf("%s : %d\n", "YRES ", ((info.yres & 0xFF) << 8 ) + ((info.yres & 0xFF00) >> 8));
+				hx_printf("%s : %d\n", "XRES", ((info.xres & 0xFF) << 8) + ((info.xres & 0xFF00) >> 8));
+				hx_printf("%s : %d\n", "PT_NUM", info.pt_num);
+				hx_printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
+				hx_printf("FW layout : \n");
+				for (int i = 0; i < 9; i++)
+					hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+						info.main_mapping[i].cmd, info.main_mapping[i].bin_start_offset * 1024, \
+						info.main_mapping[i].unit_sz);
 				hx_printf("\t%2X - start : %08X, Size %d kB\n", \
-					info.main_mapping[i].cmd, info.main_mapping[i].bin_start_offset * 1024, \
-					info.main_mapping[i].unit_sz);
-			hx_printf("\t%2X - start : %08X, Size %d kB\n", \
-					info.bl_mapping.cmd, info.bl_mapping.bin_start_offset * 1024, \
-					info.bl_mapping.unit_sz);
+						info.bl_mapping.cmd, info.bl_mapping.bin_start_offset * 1024, \
+						info.bl_mapping.unit_sz);
+			}
 		}
 
 		hx_hid_close();
