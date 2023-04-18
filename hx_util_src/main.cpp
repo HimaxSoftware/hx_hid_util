@@ -29,9 +29,9 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.1.0b"
+#define HX_UTIL_VER "V1.1.1"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:E:P"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:E:OPV"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -64,7 +64,9 @@ static struct option long_option[] = {
 	{"hid-self-test-criteria-file", 1, NULL, 'C'},
 	{"hid-set-touch-RD-report-en", 1, NULL, 'E'},
 
-	{"hid-show-report-descriptor", 0, NULL, 'P'},
+	{"hid-show-report-descriptor", 0, NULL, 'O'},
+	{"hid-show-pid-by-hid-info", 0, NULL, 'P'},
+	{"hid-show-fw-ver-by-hid-info", 0, NULL, 'V'},
 	{0, 0, 0, 0},
 };
 
@@ -110,7 +112,9 @@ void print_help(const char *prog_name)
 	printf("\t-C, --hid-self-test-criteria-file\tIndependent option, run self test with assign criteria file.\n");
 	printf("\t-E, --hid-set-touch-RD-report-en\tDisable enable touch input report descriptor in next request RD.\n");
 
-	printf("\t-P, --hid-show-report-descriptor\tShow report descriptor of HID.\n");
+	printf("\t-O, --hid-show-report-descriptor\tShow report descriptor of HID.\n");
+	printf("\t-P, --hid-show-pid-by-hid-info\tShow PID by HID info.\n");
+	printf("\t-V, --hid-show-fw-ver-by-hid-info\tShow FW version by HID info.\n");
 }
 
 void hx_printf(const char *fmt, ...)
@@ -313,8 +317,14 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 			}
 			optp->options |= OPTION_HID_SET_TOUCH_INPUT_RD_EN;
 			break;
-		case 'P':
+		case 'O':
 			optp->options |= OPTION_HID_SHOW_REPORT;
+			break;
+		case 'P':
+			optp->options = OPTION_HID_SHOW_PID_BY_HID_INFO | (optp->options & OPTION_NONE);
+			break;
+		case 'V':
+			optp->options = OPTION_HID_SHOW_FW_VER_BY_HID_INFO | (optp->options & OPTION_NONE);
 			break;
 
 		default:
@@ -349,7 +359,7 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 int main(int argc, char *argv[])
 {
 	int ret = 0;
-	int info_option = OPTION_INFO | OPTION_FW_VER | OPTION_PID;
+	int info_option = OPTION_INFO | OPTION_FW_VER | OPTION_PID | OPTION_HID_SHOW_PID_BY_HID_INFO | OPTION_HID_SHOW_FW_VER_BY_HID_INFO;
 	OPTDATA opt_data;
 	DEVINFO dev_info;
 	unsigned long time_s;
@@ -404,7 +414,9 @@ int main(int argc, char *argv[])
 		ret = write_reg(opt_data);
 	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_STATUS)
 		ret = show_status(&opt_data);
-	else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_INFO) {
+	else if (((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_INFO) ||
+			((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SHOW_PID_BY_HID_INFO) ||
+			((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SHOW_FW_VER_BY_HID_INFO)) {
 		ret = hid_show_fw_info(opt_data);
 	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_WRITE_REG) {
 		ret = hid_write_reg(opt_data);

@@ -58,6 +58,8 @@ enum mutual_option {
 	OPTION_HID_WRITE_REG = (1 + 9) << mutual_shift_bit,
 	OPTION_HID_SHOW_DIAG = (1 + 10) << mutual_shift_bit,
 	OPTION_HID_SELF_TEST_CRITERIA_FILE = (1 + 11) << mutual_shift_bit,
+	OPTION_HID_SHOW_PID_BY_HID_INFO = (1 + 12) << mutual_shift_bit,
+	OPTION_HID_SHOW_FW_VER_BY_HID_INFO = (1 + 13) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
