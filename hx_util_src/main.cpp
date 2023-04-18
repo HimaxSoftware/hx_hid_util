@@ -359,7 +359,8 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 int main(int argc, char *argv[])
 {
 	int ret = 0;
-	int info_option = OPTION_INFO | OPTION_FW_VER | OPTION_PID | OPTION_HID_SHOW_PID_BY_HID_INFO | OPTION_HID_SHOW_FW_VER_BY_HID_INFO;
+	int info_option = OPTION_INFO | OPTION_FW_VER | OPTION_PID;
+	int info_hid_option = OPTION_HID_SHOW_PID_BY_HID_INFO | OPTION_HID_SHOW_FW_VER_BY_HID_INFO;
 	OPTDATA opt_data;
 	DEVINFO dev_info;
 	unsigned long time_s;
@@ -373,7 +374,7 @@ int main(int argc, char *argv[])
 
 	time_s = get_current_ms();
 
-	if (!(opt_data.options & info_option))
+	if (!(opt_data.options & info_option) && !(opt_data.options & info_hid_option))
 		print_version();
 
 	if (opt_data.options & info_option) {
