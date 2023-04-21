@@ -1508,15 +1508,12 @@ int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 				bool useFwInfoEntries = true;
 
 				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
-					if ((oinfo.passwd[0] != 0xA5) || (oinfo.passwd[1] != 0x5A)) {
-						useFwInfoEntries = false;
-					} else {
-						fw_entries = calculateMappingEntries(oinfo.main_mapping, sizeof(oinfo.main_mapping));
-						if (fw_entries > 0) {
-							useFwInfoEntries = true;
-							fw_entry_table = oinfo.main_mapping;
-						}
+					fw_entries = calculateMappingEntries(oinfo.main_mapping, sizeof(oinfo.main_mapping));
+					if (fw_entries > 0) {
+						useFwInfoEntries = true;
+						fw_entry_table = oinfo.main_mapping;
 					}
+
 					bOinfoValid = true;
 				} else {
 					bOinfoValid = false;
@@ -1698,15 +1695,12 @@ int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 				bool useFwInfoEntries = true;
 
 				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
-					if ((oinfo.passwd[0] != 0xA5) || (oinfo.passwd[1] != 0x5A)) {
-						useFwInfoEntries = false;
-					} else {
-						fw_entries = calculateMappingEntries(&oinfo.bl_mapping, sizeof(oinfo.bl_mapping));
-						if (fw_entries > 0) {
-							useFwInfoEntries = true;
-							fw_entry_table = &oinfo.bl_mapping;
-						}
+					fw_entries = calculateMappingEntries(&oinfo.bl_mapping, sizeof(oinfo.bl_mapping));
+					if (fw_entries > 0) {
+						useFwInfoEntries = true;
+						fw_entry_table = &oinfo.bl_mapping;
 					}
+
 					bOinfoValid = true;
 				} else {
 					bOinfoValid = false;
@@ -2704,120 +2698,6 @@ DIAG_FUNC_END:
 	hx_hid_close();
 
 	return ret;
-}
-
-struct __attribute__((__packed__)) hid_descriptor_t {
-	uint16_t length;
-	uint16_t bcdVer;
-	uint16_t rd_length;
-	uint8_t rd_addr[2];
-	uint8_t input_addr[2];
-	uint16_t input_length;
-	uint8_t output_addr[2];
-	uint16_t output_length;
-	uint8_t cmd_addr[2];
-	uint8_t data_addr[2];
-	uint16_t vendor_id;
-	uint16_t product_id;
-	uint16_t version;
-	uint32_t reserved;
-} hid_descriptor;
-
-int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
-{
-	int ret;
-	uint8_t read_back[4] = {0};
-	hx_hid_info oinfo;
-
-	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
-			/* if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0)
-				hx_printf("got dev info\n"); */
-
-			int sz = hx_hid_get_size_by_id(HID_INPUT_RD_EN_ID);
-			if (sz > 0) {
-				uint32_t en = opt_data.input_en.b[0];
-				ret = hx_hid_set_feature(HID_INPUT_RD_EN_ID, (uint8_t *)&en, sz);
-				if (ret < 0) {
-					ret = -EIO;
-					goto END_SET_RD_EN;
-				}
-				hx_printf("set ID %d to %d\n", HID_INPUT_RD_EN_ID, en);
-				ret = hx_hid_get_feature(HID_INPUT_RD_EN_ID, read_back, sz);
-				if (ret < 0) {
-					hx_printf("Read back failed!\n");
-					ret = -EIO;
-				} else {
-					hx_printf("Read ID %d back : %X\n", HID_INPUT_RD_EN_ID, read_back[0]);
-					opt_data.options |= OPTION_REBIND;
-					dinfo.vid = opt_data.vid;//0x4858;
-					dinfo.pid = opt_data.pid;//0x121A;
-
-					hx_hid_close();
-
-					/* uint8_t cmd = 0x44;
-					for (int i = 0; i< 20; i++) {
-						hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1);
-						usleep(10 * 1000);
-						hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID,  read_back, 1);
-						usleep(10 * 1000);
-					} */
-					hx_scan_i2c_device(NULL);
-					if (hx_open_i2c_device() == 0) {
-						uint8_t cmd0[] = { 1, 0 };
-						// uint8_t data0[30];
-						// hx_i2c_write(cmd0, sizeof(cmd0));
-						if (hid_i2c_read(cmd0, sizeof(cmd0), (uint8_t *)&hid_descriptor, sizeof(hid_descriptor)) >= 0) {
-							#if 0
-							uint8_t *rd_desc = (uint8_t *)malloc(hid_descriptor.rd_length);
-							if (hid_i2c_read(hid_descriptor.rd_addr, 2, rd_desc, hid_descriptor.rd_length) >= 0) {
-								for (int k = 0; k < hid_descriptor.rd_length;k++) {
-									if (k%4 == 0)
-										hx_printf("\n");
-									hx_printf("%02X ", rd_desc[k]);
-								}
-								hx_printf("\n");
-							}
-							free(rd_desc);
-							#else
-							uint8_t reset_cmd[4];
-							reset_cmd[0] = hid_descriptor.cmd_addr[0];
-							reset_cmd[1] = hid_descriptor.cmd_addr[1];
-							reset_cmd[2] = 0;
-							reset_cmd[3] = 1;
-							hx_printf("send %02X %02X %02X %02X\n", reset_cmd[0], reset_cmd[1], reset_cmd[2], reset_cmd[3]);
-							hid_i2c_write(reset_cmd, sizeof(reset_cmd));
-							usleep(100 * 1000);
-							#endif
-						}
-						// for (int k = 0; k < sizeof(data0);k++)
-							// hx_printf("%02X ", data0[k]);
-						// hx_printf("\n");
-					}
-
-					ret = 0;
-					// himax_scan_device(&opt_data);
-					// himax_sense_on(0);
-					// hx_close_i2c_device();
-					// int hx_hid_read(uint8_t *data, int32_t len);
-					// uint8_t tmp[255] = {0};
-					// tmp[0] = 5;
-					// for (int i = 0; i < 10; i++)
-					// 	hx_hid_read(tmp, sizeof(tmp));
-
-				}
-			} else {
-				ret = -ENOENT;
-			}
-		} else {
-			ret = -ENOENT;
-		}
-END_SET_RD_EN:
-		hx_hid_close();
-		return ret;
-	} else {
-		return -ENODEV;
-	}
 }
 
 int hid_update_DEVINFO(DEVINFO& oinfo)

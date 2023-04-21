@@ -29,9 +29,9 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.1.1"
+#define HX_UTIL_VER "V1.1.2"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:E:OPV"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPV"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -62,7 +62,6 @@ static struct option long_option[] = {
 	{"hid-self-test-max", 1, NULL, 'M'},
 	{"hid-self-test-min", 1, NULL, 'N'},
 	{"hid-self-test-criteria-file", 1, NULL, 'C'},
-	{"hid-set-touch-RD-report-en", 1, NULL, 'E'},
 
 	{"hid-show-report-descriptor", 0, NULL, 'O'},
 	{"hid-show-pid-by-hid-info", 0, NULL, 'P'},
@@ -110,7 +109,6 @@ void print_help(const char *prog_name)
 	printf("\t-M, --hid-self-test-max\tUse with -T for single test type's upperbond.\n");
 	printf("\t-N, --hid-self-test-min\tUse with -T for single test type's lowerbond.\n");
 	printf("\t-C, --hid-self-test-criteria-file\tIndependent option, run self test with assign criteria file.\n");
-	printf("\t-E, --hid-set-touch-RD-report-en\tDisable enable touch input report descriptor in next request RD.\n");
 
 	printf("\t-O, --hid-show-report-descriptor\tShow report descriptor of HID.\n");
 	printf("\t-P, --hid-show-pid-by-hid-info\tShow PID by HID info.\n");
@@ -309,14 +307,6 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 			optp->criteria_path = optarg;
 			optp->options = OPTION_HID_SELF_TEST_CRITERIA_FILE | (optp->options & OPTION_NONE);
 			break;
-		case 'E':
-			if (sscanf(optarg, "%d", &(optp->input_en.i)) == EOF) {
-				optp->input_en.i = 0;
-				hx_printf("parsing touch input RD en error!\n");
-				break;
-			}
-			optp->options |= OPTION_HID_SET_TOUCH_INPUT_RD_EN;
-			break;
 		case 'O':
 			optp->options |= OPTION_HID_SHOW_REPORT;
 			break;
@@ -393,13 +383,6 @@ int main(int argc, char *argv[])
 
 	if (opt_data.options & OPTION_HID_SHOW_REPORT) {
 		ret = hid_print_report_descriptor(opt_data);
-		if (ret < 0) {
-			goto MAIN_END;
-		}
-	}
-
-	if (opt_data.options & OPTION_HID_SET_TOUCH_INPUT_RD_EN) {
-		ret = hid_set_input_RD_en(opt_data, dev_info);
 		if (ret < 0) {
 			goto MAIN_END;
 		}

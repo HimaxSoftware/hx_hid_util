@@ -38,11 +38,10 @@ enum or_option {
 	OPTION_HID_SHOW_REPORT = 1 << 8,
 	OPTION_HID_SELF_TEST = 1 << 9,
 	OPTION_HID_SELF_TEST_UPPER_BOUND = 1 << 10,
-	OPTION_HID_SELF_TEST_LOWER_BOUND = 1 << 11,
-	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 12
+	OPTION_HID_SELF_TEST_LOWER_BOUND = 1 << 11
 };
 
-const int mutual_shift_bit = 13;
+const int mutual_shift_bit = 12;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),
