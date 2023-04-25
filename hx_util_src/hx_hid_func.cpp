@@ -36,7 +36,7 @@ long g_hidfd = -1;
 struct hid_id_size_mapping_t {
 	uint8_t id;
 	uint16_t sz;
-} g_hid_id_size_mapping[15] = { 0 };
+} g_hid_id_size_mapping[15];
 int g_hid_id_sz_mapping_count = 0;
 
 int hx_get_hid_fd()
@@ -83,8 +83,8 @@ int hx_scan_open_hidraw(OPTDATA& optdata)
 
 			break;
 		}
-		// hx_printf("hidraw info, bus type : %d, vendor : 0x%04X, product : 0x%04X\n", \
-			dinfo.bustype, dinfo.vendor, dinfo.product);
+		/* hx_printf("hidraw info, bus type : %d, vendor : 0x%04X, product : 0x%04X\n", \
+		 *	dinfo.bustype, dinfo.vendor, dinfo.product); */
 		if (dinfo.vendor == 0x4858) {
 			found = 1;
 			// *hidpath = hidraw_path;
