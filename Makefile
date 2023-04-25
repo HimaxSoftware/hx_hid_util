@@ -8,7 +8,7 @@ AP	= hx_util
 
 all: $(AP)
 
-CXXFLAGS	?= -Wall -Os
+CXXFLAGS	?= -Wall -Os -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE 
 
 CPPOBJS  	= hx_util_src/main.o \
 			hx_util_src/hx_dev_api.o \
