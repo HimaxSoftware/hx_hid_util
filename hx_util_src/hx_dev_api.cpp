@@ -1472,9 +1472,7 @@ int hid_show_fw_info(OPTDATA& opt_data)
 int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 {
 	hx_hid_info oinfo;
-	hx_hid_info ninfo;
 	bool bOinfoValid = false;
-	bool bNinfoValid = false;
 	bool bGoUpdate = false;
 	HXFW hxfw;
 	time_t start, now;
@@ -1488,7 +1486,7 @@ int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 	const uint32_t main_code_seg_sz = 240 * 1024;
 	const uint32_t main_seg_1_sz = 127 * 1024;
 	const uint32_t main_seg_ignore_sz = 2 * 1024;
-	const uint32_t main_seg_2_sz = main_code_seg_sz - main_seg_1_sz - main_seg_ignore_sz;
+
 	int ret = 0;
 	int fw_entries = 0;
 	hx_hid_fw_unit_t* fw_entry_table = NULL;
@@ -1660,9 +1658,7 @@ LOAD_FW_FAILED:
 int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 {
 	hx_hid_info oinfo;
-	hx_hid_info ninfo;
 	bool bOinfoValid = false;
-	bool bNinfoValid = false;
 	bool bGoUpdate = false;
 	HXFW hxfw;
 	time_t start, now;
@@ -1673,8 +1669,6 @@ int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 	uint32_t fwStartLoc;
 	uint32_t outputTimes;
 	const uint8_t bl_update_cmd = 0x77;
-	const uint32_t main_code_seg_sz = 240 * 1024;
-	const uint32_t bl_sz = 12 * 1024;
 	int ret = 0;
 	int fw_entries = 0;
 	hx_hid_fw_unit_t* fw_entry_table = NULL;
@@ -2580,8 +2574,10 @@ int hid_show_diag(OPTDATA& opt_data)
 				sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
 				if (sz > 0) {
 					frame = (uint8_t *)malloc(sz);
-					if (frame == NULL)
+					if (frame == NULL) {
+						ret = -ENOMEM;
 						goto DIAG_FUNC_END;
+					}
 					if (opt_data.options & OPTION_HID_SELF_TEST) {
 						int stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
 						if (stSz > 0) {
@@ -2614,6 +2610,7 @@ POLL_AGAIN:
 						}
 					}
 					if (((opt_data.options & OPTION_HID_SELF_TEST) > 0) && !bSelfTestCompleted) {
+						ret = -EIO;
 						goto DIAG_FUNC_END;
 					}
 
@@ -2685,6 +2682,8 @@ POLL_AGAIN:
 
 					free(frame);
 				}
+			} else {
+				ret = -ENODATA;
 			}
 		} else {
 			hx_printf("ID parsing failed, return!\n");
