@@ -1192,8 +1192,14 @@ int rebind_driver(DEVINFO *devp)
 			strcpy(driver_path, "/sys/bus/i2c/drivers/i2c_hid_acpi/");
 			closedir(dir);
 		} else {
-			printf("No desire path exist!\n");
-			return -EACCES;
+			dir = opendir("/sys/bus/i2c/drivers/i2c_hid_of/");
+			if (dir) {
+				strcpy(driver_path, "/sys/bus/i2c/drivers/i2c_hid_of/");
+				closedir(dir);
+			} else {
+				printf("No desire path exist!\n");
+				return -EACCES;
+			}
 		}
 	}
 
