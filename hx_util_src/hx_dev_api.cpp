@@ -2505,11 +2505,11 @@ NEXT_ITEM:
 				}
 				for (uint32_t i = 0; i < sizeof(test_items)/sizeof(hid_self_test_support_item_t); i++) {
 					if (test_items[i].activated) {
-						hx_printf("%s test result : %s! ", test_items[i].name, test_items[i].testResult?"Pass":"Fail");
+						printf("%s test result : %s! ", test_items[i].name, test_items[i].testResult?"Pass":"Fail");
 						if (!test_items[i].testResult) {
-							hx_printf("fail sample (rx : %d, tx : %d) : %d\n", test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
+							printf("fail sample (rx : %d, tx : %d) : %d\n", test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
 						} else {
-							hx_printf("\n");
+							printf("\n");
 						}
 					}
 				}
@@ -2664,9 +2664,9 @@ POLL_AGAIN:
 					if (opt_data.options & OPTION_HID_SELF_TEST) {
 						if (bSelfTestCompleted) {
 							if (bTestPass) {
-								hx_printf("Self test of 0x%02X PASS!\n", opt_data.param.i);
+								printf("Self test of 0x%02X PASS!\n", opt_data.param.i);
 							} else {
-								hx_printf("Self test of 0x%02X Failed! (rx:%d, tx:%d) : %d\n",
+								printf("Self test of 0x%02X Failed! (rx:%d, tx:%d) : %d\n",
 								opt_data.param.i, fail_p.rx, fail_p.tx, fail_p.v);
 							}
 						}
