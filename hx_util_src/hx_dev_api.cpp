@@ -2633,7 +2633,9 @@ POLL_AGAIN:
 
 									usdata.i =
 										(int16_t)frame[header + i * 2] + (((int16_t)frame[header + i * 2 + 1]) << 8);
-									if (bSelfTestCompleted && (opt_data.param.i == 0x22))
+
+									if ((bSelfTestCompleted && (opt_data.param.i == 0x22)) ||
+										(opt_data.options & OPTION_HID_PARTIAL_DISPLAY_SIGNED) == OPTION_HID_PARTIAL_DISPLAY_SIGNED)
 										usdata.i = *(int16_t *)&(usdata.s[0]);
 									if ((usdata.i > opt_data.self_test_spec_max) ||
 										(usdata.i < opt_data.self_test_spec_min)) {
@@ -2770,4 +2772,130 @@ int hid_update_DEVINFO(DEVINFO& oinfo)
 	// hx_printf("Scan HIDRAW device in %s ...\n", dev_dir);
 
 	return 0;
+}
+
+int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
+{
+	int ret = 0;
+	int partial_data_sz = 0;
+	bool display_data = false;
+	int save_fd = -1;
+	uint8_t *partial_data = NULL;
+	hx_hid_info info;
+	int total_sz = 0;
+	int full_cycle = 0;
+	uint16_t value;
+	char* buffer = NULL;
+	int stringLen = 0;
+
+	if (hx_scan_open_hidraw(optdata) < 0) {
+		return -EIO;
+	}
+
+	if (hx_hid_parse_RD_for_idsz() < 0) {
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	partial_data_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_PARTIAL_ID);
+	if (partial_data_sz <= 0) {
+		hx_printf("No partial data ID in RD!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) != 0) {
+		hx_printf("Get HID_CFG_ID failed!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+	total_sz = ((int)info.rx * (int)info.tx + (int)info.rx + (int)info.tx) * 2;
+
+	if ((optdata.options & OPTION_HID_PARTIAL_SAVE_FILE) == OPTION_HID_PARTIAL_SAVE_FILE) {
+		save_fd = open(optdata.partial_save_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (save_fd < 0) {
+			hx_printf("Open %s failed!\n", optdata.partial_save_file);
+			ret = -EFAULT;
+			goto SETUP_FAILED;
+		}
+	}
+
+	partial_data = (uint8_t *)malloc(partial_data_sz);
+	if (partial_data == NULL) {
+		hx_printf("Allocate memory for partial data failed!\n");
+		ret = -ENOMEM;
+		goto ALLOCATE_FAILED;
+	}
+
+	if ((optdata.options & OPTION_HID_PARTIAL_DISPLAY) == OPTION_HID_PARTIAL_DISPLAY || 
+		(optdata.options & OPTION_HID_PARTIAL_SAVE_FILE) == OPTION_HID_PARTIAL_SAVE_FILE) {
+		buffer = (char *)malloc(((partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1);
+
+		if (buffer == NULL) {
+			hx_printf("Allocate memory for string buffer failed!\n");
+			ret = -ENOMEM;
+			goto ALLOCATE_BUF_FAILED;
+		}
+		stringLen = ((partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1;
+	}
+
+	if ((optdata.options & OPTION_HID_PARTIAL_DISPLAY) == OPTION_HID_PARTIAL_DISPLAY) {
+		display_data = true;
+	}
+
+	full_cycle = total_sz / ((partial_data_sz - 1) / 2 - 2);
+	if ((total_sz % ((partial_data_sz - 1) / 2 - 2)) > 0)
+		full_cycle++;
+	hx_printf("total_sz = %d, partial_data_sz = %d, full_cycle = %d\n", total_sz, partial_data_sz, full_cycle);
+
+	while (loopEn) {
+		ret = hx_hid_get_feature(HID_TOUCH_MONITOR_PARTIAL_ID, partial_data, partial_data_sz);
+		if (ret != 0) {
+			hx_printf("Get partial data failed!\n");
+			usleep(100);
+			continue;
+		}
+
+		if (partial_data[0] > full_cycle) {
+			hx_printf("index overflow(%02X)! Ignore.\n", partial_data[0]);
+			usleep(100);
+			continue;
+		}
+		
+		if (buffer != NULL) {
+			memset(buffer, 0, stringLen);
+			stringLen = 0;
+			stringLen += sprintf(buffer + stringLen, "%02X (%02X %02X %02X %02X) : ", partial_data[0], partial_data[1], partial_data[2], partial_data[3], partial_data[4]);
+			for (int i = 5; i < partial_data_sz; i += 2) {
+				value = (uint16_t)partial_data[i] | ((uint16_t)partial_data[i + 1] << 8);
+				stringLen += sprintf(buffer + stringLen, "%5d ", value);
+			}
+			stringLen += sprintf(buffer + stringLen, "\n");
+
+			if (display_data) {
+				hx_printf("%s", buffer);
+			}
+
+			if (save_fd > 0) {
+				ret = write(save_fd, buffer, strlen(buffer));
+				if (ret != strlen(buffer)) {
+					hx_printf("Write partial data to file failed!\n");
+					break;
+				}
+			}
+		}
+
+		usleep(optdata.partial_en_polling_rate * 1000);
+	}
+
+	free(buffer);
+ALLOCATE_BUF_FAILED:
+	free(partial_data);
+ALLOCATE_FAILED:
+	if (save_fd > 0)
+		close(save_fd);
+SETUP_FAILED:
+	hx_hid_close();
+	
+	return ret;
 }

@@ -38,10 +38,13 @@ enum or_option {
 	OPTION_HID_SHOW_REPORT = 1 << 8,
 	OPTION_HID_SELF_TEST = 1 << 9,
 	OPTION_HID_SELF_TEST_UPPER_BOUND = 1 << 10,
-	OPTION_HID_SELF_TEST_LOWER_BOUND = 1 << 11
+	OPTION_HID_SELF_TEST_LOWER_BOUND = 1 << 11,
+	OPTION_HID_PARTIAL_DISPLAY = 1 << 12,
+	OPTION_HID_PARTIAL_SAVE_FILE = 1 << 13,
+	OPTION_HID_PARTIAL_DISPLAY_SIGNED = 1 << 14
 };
 
-const int mutual_shift_bit = 12;
+const int mutual_shift_bit = 15;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),
@@ -59,6 +62,7 @@ enum mutual_option {
 	OPTION_HID_SELF_TEST_CRITERIA_FILE = (1 + 11) << mutual_shift_bit,
 	OPTION_HID_SHOW_PID_BY_HID_INFO = (1 + 12) << mutual_shift_bit,
 	OPTION_HID_SHOW_FW_VER_BY_HID_INFO = (1 + 13) << mutual_shift_bit,
+	OPTION_HID_PARTIAL_EN_POLLING_RATE = (1 + 14) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
@@ -113,6 +117,9 @@ typedef	struct optdata {
 	int32_t self_test_spec_max;
 	int32_t self_test_spec_min;
 	char *criteria_path;
+
+	uint32_t partial_en_polling_rate;
+	char *partial_save_file;
 } OPTDATA;
 
 typedef struct hxfw {

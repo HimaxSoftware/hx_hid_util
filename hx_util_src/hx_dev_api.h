@@ -34,4 +34,5 @@ int hid_show_fw_info(OPTDATA& opt_data);
 int hid_write_reg(OPTDATA& opt_data);
 int hid_read_reg(OPTDATA& opt_data);
 int hid_show_diag(OPTDATA& opt_data);
+int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn);
 #endif

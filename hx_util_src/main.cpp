@@ -24,14 +24,15 @@
 #include <getopt.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "hx_def.h"
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.1.5"
+#define HX_UTIL_VER "V1.2.1"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPV"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZY"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -66,10 +67,16 @@ static struct option long_option[] = {
 	{"hid-show-report-descriptor", 0, NULL, 'O'},
 	{"hid-show-pid-by-hid-info", 0, NULL, 'P'},
 	{"hid-show-fw-ver-by-hid-info", 0, NULL, 'V'},
+
+	{"hid-partial-display-en-mode", 1, NULL, 'E'},
+	{"hid-partial-display-save-fname", 1, NULL, 'X'},
+	{"hid-partial-display-show", 0, NULL, 'Z'},
+	{"hid-partial-display-signed", 0, NULL, 'Y'},
 	{0, 0, 0, 0},
 };
 
 int g_show_dbg_log = 0;
+bool is_partial_en = false;
 
 void print_version()
 {
@@ -113,6 +120,11 @@ void print_help(const char *prog_name)
 	printf("\t-O, --hid-show-report-descriptor\tShow report descriptor of HID.\n");
 	printf("\t-P, --hid-show-pid-by-hid-info\tShow PID by HID info.\n");
 	printf("\t-V, --hid-show-fw-ver-by-hid-info\tShow FW version by HID info.\n");
+
+	printf("\t-E, --hid-partial-display-en-mode\tEnable partial display mode, parameter is polling rate unit is millisecond.\n");
+	printf("\t-X, --hid-partial-display-save-fname\tSave partial display data to file, parameter is file name.\n");
+	printf("\t-Z, --hid-partial-display-show\tShow partial display data.\n");
+	printf("\t-Y, --hid-partial-display-signed\tShow partial display data with signed.\n");
 }
 
 void hx_printf(const char *fmt, ...)
@@ -316,7 +328,23 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 		case 'V':
 			optp->options = OPTION_HID_SHOW_FW_VER_BY_HID_INFO | (optp->options & OPTION_NONE);
 			break;
-
+		case 'E':
+			if (sscanf(optarg, "%d", &(optp->partial_en_polling_rate)) == EOF) {
+				hx_printf("parsing polling rate error!\n");
+				break;
+			}
+			optp->options = OPTION_HID_PARTIAL_EN_POLLING_RATE | (optp->options & OPTION_NONE);
+			break;
+		case 'X':
+			optp->options |= OPTION_HID_PARTIAL_SAVE_FILE;
+			optp->partial_save_file = optarg;
+			break;
+		case 'Z':
+			optp->options |= OPTION_HID_PARTIAL_DISPLAY;
+			break;
+		case 'Y':
+			optp->options |= OPTION_HID_PARTIAL_DISPLAY_SIGNED;
+			break;
 		default:
 			break;
 		}
@@ -346,6 +374,12 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 	return 0;
 }
 
+static void handleCtrlC(int sig)
+{
+	is_partial_en = false;
+	hx_printf("Ctrl-C pressed, exit!\n");
+}
+
 int main(int argc, char *argv[])
 {
 	int ret = 0;
@@ -354,6 +388,7 @@ int main(int argc, char *argv[])
 	OPTDATA opt_data;
 	DEVINFO dev_info;
 	unsigned long time_s;
+	
 
 	memset((void*) &opt_data, 0, sizeof(OPTDATA));
 	memset(&dev_info, 0, sizeof(DEVINFO));
@@ -425,6 +460,10 @@ int main(int argc, char *argv[])
 				ret = hid_main_update(opt_data, dev_info, errorCode);
 			}
 		}
+	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_PARTIAL_EN_POLLING_RATE) {
+		is_partial_en = true;
+		signal(SIGINT, handleCtrlC);
+		ret = hid_polling_partial_data(opt_data, is_partial_en);
 	}
 
 	if (opt_data.options & OPTION_REBIND) {
