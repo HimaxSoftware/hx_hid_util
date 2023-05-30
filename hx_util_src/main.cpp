@@ -30,7 +30,7 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.2.1"
+#define HX_UTIL_VER "V1.2.2"
 
 #define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZY"
 
@@ -459,6 +459,8 @@ int main(int argc, char *argv[])
 			if (ret == 0) {
 				ret = hid_main_update(opt_data, dev_info, errorCode);
 			}
+		} else {
+			printf("hid_main_update no go, errorCode = %d\n", ret);
 		}
 	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_PARTIAL_EN_POLLING_RATE) {
 		is_partial_en = true;
