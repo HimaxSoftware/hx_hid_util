@@ -1642,6 +1642,7 @@ POLL_FAILED:
 					}
 				} else {
 					hx_printf("Version identical, update no go!\n");
+					ret = 1;
 				}
 			}
 		}
