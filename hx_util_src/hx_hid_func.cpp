@@ -435,7 +435,7 @@ int hx_hid_print_RD(void)
 			if (rd.value[i] == 0xFE)
 				current_desc_size = rd.value[i + 1] + 3;
 			else
-				current_desc_size = ((rd.value[i] & 0x03) == 0x03)?4:(rd.value[i] & 0x03) + 1;
+				current_desc_size = (((rd.value[i] & 0x03) == 0x03)?4:(rd.value[i] & 0x03)) + 1;
 
 			last_tidx = tidx;
 			tidx += current_desc_size;
