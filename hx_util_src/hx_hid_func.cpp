@@ -489,6 +489,10 @@ int hx_hid_parse_RD_for_idsz(void)
 						current_value = calculate_prop_value(current_desc, current_desc_size);
 						current_usage_page = current_value;
 						break;
+					case 0x80:
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].id = current_id;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count++].sz = current_bit_size*current_count/8;
+						break;
 					case 0xB0:
 						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].id = current_id;
 						g_hid_id_size_mapping[g_hid_id_sz_mapping_count++].sz = current_bit_size*current_count/8;
@@ -515,7 +519,7 @@ int hx_hid_parse_RD_for_idsz(void)
 			if (rd.value[i] == 0xFE)
 				current_desc_size = rd.value[i + 1] + 3;
 			else
-				current_desc_size = ((rd.value[i] & 0x03) == 0x03)?4:(rd.value[i] & 0x03) + 1;
+				current_desc_size = (((rd.value[i] & 0x03) == 0x03)?4:(rd.value[i] & 0x03)) + 1;
 
 			last_tidx = tidx;
 			tidx += current_desc_size;

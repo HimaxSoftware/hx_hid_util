@@ -30,9 +30,9 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.2.3"
+#define HX_UTIL_VER "V1.2.5"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZY"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -72,6 +72,8 @@ static struct option long_option[] = {
 	{"hid-partial-display-save-fname", 1, NULL, 'X'},
 	{"hid-partial-display-show", 0, NULL, 'Z'},
 	{"hid-partial-display-signed", 0, NULL, 'Y'},
+
+	{"hid-criteria-log-path", 1, NULL, 'o'},
 	{0, 0, 0, 0},
 };
 
@@ -125,6 +127,8 @@ void print_help(const char *prog_name)
 	printf("\t-X, --hid-partial-display-save-fname\tSave partial display data to file, parameter is file name.\n");
 	printf("\t-Z, --hid-partial-display-show\tShow partial display data.\n");
 	printf("\t-Y, --hid-partial-display-signed\tShow partial display data with signed.\n");
+
+	printf("\t-o, --hid-criteria-log-path\tSet criteria log path.\n");
 }
 
 void hx_printf(const char *fmt, ...)
@@ -344,6 +348,10 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 			break;
 		case 'Y':
 			optp->options |= OPTION_HID_PARTIAL_DISPLAY_SIGNED;
+			break;
+		case 'o':
+			optp->options |= OPTION_HID_CRITERIA_OUTPUT_PATH;
+			optp->criteria_output_path = optarg;
 			break;
 		default:
 			break;

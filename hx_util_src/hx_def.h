@@ -41,10 +41,11 @@ enum or_option {
 	OPTION_HID_SELF_TEST_LOWER_BOUND = 1 << 11,
 	OPTION_HID_PARTIAL_DISPLAY = 1 << 12,
 	OPTION_HID_PARTIAL_SAVE_FILE = 1 << 13,
-	OPTION_HID_PARTIAL_DISPLAY_SIGNED = 1 << 14
+	OPTION_HID_PARTIAL_DISPLAY_SIGNED = 1 << 14,
+	OPTION_HID_CRITERIA_OUTPUT_PATH = 1 << 15,
 };
 
-const int mutual_shift_bit = 15;
+const int mutual_shift_bit = 16;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),
@@ -117,6 +118,7 @@ typedef	struct optdata {
 	int32_t self_test_spec_max;
 	int32_t self_test_spec_min;
 	char *criteria_path;
+	char *criteria_output_path;
 
 	uint32_t partial_en_polling_rate;
 	char *partial_save_file;

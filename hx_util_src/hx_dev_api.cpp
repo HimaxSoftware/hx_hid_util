@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <sys/time.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <linux/hidraw.h>
@@ -2188,6 +2189,18 @@ START_KEYWORD_MATCH:
 	}
 }
 
+void log(FILE *fp, const char *fmt, ...)
+{
+	va_list ap;
+
+	if (fp == NULL)
+		return;
+
+	va_start(ap, fmt);
+	vfprintf(fp, fmt, ap);
+	va_end(ap);
+}
+
 int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 {
 	typedef struct hid_self_test_support_item {
@@ -2273,7 +2286,17 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	int debug_start_loc;
 	int rx_num;
 	int tx_num;
+	char fname_only[128] = {0};
+	char tmp_output_pathname[1024] = {0};
+	char final_output_pathname[1024] = {0};
+	bool is_output_file = (opt_data.options & OPTION_HID_CRITERIA_OUTPUT_PATH) == OPTION_HID_CRITERIA_OUTPUT_PATH;
+	time_t t = time(NULL);
+	struct tm *dtime = localtime(&t);
+	struct timeval tv;
+	FILE *fp = NULL;
+	bool overall_result = true;
 
+	gettimeofday(&tv, NULL);
 	if (hx_hid_parse_criteria_file(opt_data, &hx_criteria_table, &nKeyword) == 0) {
 		if (hx_scan_open_hidraw(opt_data) == 0) {
 			if (hx_hid_parse_RD_for_idsz() == 0) {
@@ -2296,6 +2319,14 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 								ret = -ENOMEM;
 								goto CRITERIA_NO_MEM_FAILED;
 							}
+							if (is_output_file) {
+								snprintf(fname_only, sizeof(fname_only), "%d%02d%02d%02d%02d%02d%03d.txt",
+									dtime->tm_year+1900, dtime->tm_mon+1, dtime->tm_mday, dtime->tm_hour,
+									dtime->tm_min, dtime->tm_sec, (int)(tv.tv_usec/1000));
+								snprintf(tmp_output_pathname, sizeof(tmp_output_pathname), "%s/%s%s",
+									opt_data.criteria_output_path, "hx_mp_test_log_", fname_only);
+								fp = fopen(tmp_output_pathname, "w");
+							}
 
 							for (uint32_t i = 0; i < sizeof(test_items)/sizeof(hid_self_test_support_item_t); i++) {
 								bLowerBondFound = false;
@@ -2314,6 +2345,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 									}
 									if (!bLowerBondFound) {
 										hx_printf("%s: Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", test_items[i].name, rx_num, tx_num);
+										log(fp, "Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", rx_num, tx_num);
 										goto NEXT_ITEM;
 									}
 								}
@@ -2330,6 +2362,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 									}
 									if (!bUpperBondFound) {
 										hx_printf("%s: Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", test_items[i].name, rx_num, tx_num);
+										log(fp, "Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", rx_num, tx_num);
 										goto NEXT_ITEM;
 									}
 								}
@@ -2341,10 +2374,12 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 
 								if (!test_items[i].activated) {
 									hx_printf("Required boundary condition not found, ignore %s test.\n", test_items[i].name);
+									log(fp, "Required boundary condition not found, ignore %s test.\n", test_items[i].name);
 									goto NEXT_ITEM;
 								}
 
 								hx_printf("start %s test(cmd : 0x%X):\n", test_items[i].name, test_items[i].hid_switch);
+								log(fp, "start %s test(cmd : 0x%X):\n", test_items[i].name, test_items[i].hid_switch);
 								// if ((test_items[i].hid_switch == HID_SELF_TEST_RAWDATA) || (test_items[i].hid_switch == HID_SELF_TEST_NOISE)) {
 								// 	cmd[0] = 0x01;
 								// 	ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
@@ -2367,28 +2402,38 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 										if (!pollingForResult(HID_SELF_TEST_ID, cmd, stSz, pollingInterval, 7,	recv, &nDataRecv)) {
 											if (nDataRecv == 0) {
 												hx_printf("polling result recv nothing.\n");
+												log(fp, "polling result recv nothing.\n");
 												//continue;
 											} else if (nDataRecv > 0) {
 												if ((recv[0] & 0xF0) == 0xF0) {
 													switch (recv[0]) {
 													case 0xF1:
-														if (lastState != recv[0])
+														if (lastState != recv[0]) {
 															hx_printf("self test init stage.\n");
+															log(fp, "self test init stage.\n");
+														}
 														break;
 													case 0xF2:
-														if (lastState != recv[0])
+														if (lastState != recv[0]) {
 															hx_printf("self test started.\n");
+															log(fp, "self test started.\n");
+														}
 														break;
 													case 0xF3:
-														if (lastState != recv[0])
+														if (lastState != recv[0]) {
 															hx_printf("self test on going.\n");
+															log(fp, "self test on going.\n");
+														}
 														break;
 													case 0xFF:
-														if (lastState != recv[0])
+														if (lastState != recv[0]) {
 															hx_printf("self test finish.\n");
+															log(fp, "self test finish.\n");
+														}
 														break;
 													default:
 														hx_printf("self test undefined stage.(0x%02X)\n", recv[0]);
+														log(fp, "self test undefined stage.(0x%02X)\n", recv[0]);
 													};
 													lastState = recv[0];
 													usleep(16 * 1000);
@@ -2397,31 +2442,38 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 													switch (recv[0]) {
 													case 0xE1:
 														hx_printf("self test not support!\n");
+														log(fp, "self test not support!\n");
 														break;
 													case 0xEF:
 														hx_printf("self test error!\n");
+														log(fp, "self test error!\n");
 														break;
 													default:
 														hx_printf("self test undefined error(%02X)!\n", recv[0]);
+														log(fp, "self test undefined error(%02X)!\n", recv[0]);
 													};
 													goto NEXT_ITEM;
 												} else {
 													hx_printf("self test return undefined value!(0x%02X)\n", recv[0]);
+													log(fp, "self test return undefined value!(0x%02X)\n", recv[0]);
 													goto NEXT_ITEM;
 												}
 											} else {
 												hx_printf("shouldn't be here!!!\n");
+												log(fp, "shouldn't be here!!!\n");
 											}
 										} else {
 											//test completed
 											bSelfTestCompleted = true;
 											hx_printf("Self test completed.\n");
+											log(fp, "Self test completed.\n");
 											break;
 										}
 									}
 
 									if (retry_cnt == retry_limit) {
 										hx_printf("Couldn't get %s result, ignore this test item!\n", test_items[i].name);
+										log(fp, "Couldn't get %s result, ignore this test item!\n", test_items[i].name);
 										goto NEXT_ITEM;
 									}
 
@@ -2433,10 +2485,13 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 											hx_printf("       ");
 											for(int j = 0; j < rx_num; j++) {
 												hx_printf(" RX[%02d]", j + 1);
+												log(fp, " RX[%02d]", j + 1);
 											}
 											for (int j = 0; j < (rx_num * tx_num); j++) {
-												if ((j % rx_num) == 0)
+												if ((j % rx_num) == 0) {
 													hx_printf("\nTX[%02d]:", j/rx_num + 1);
+													log(fp, "\nTX[%02d]:", j/rx_num + 1);
+												}
 												usdata.i =
 													(int16_t)frame[header + j * 2] + (((int16_t)frame[header + j * 2 + 1]) << 8);
 												if (bSelfTestCompleted && (test_items[i].hid_switch == HID_SELF_TEST_NOISE))
@@ -2460,15 +2515,20 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 														test_items[i].testResult &= true;
 												}
 												hx_printf(" %6d", (usdata.i));
+												log(fp, " %6d", (usdata.i));
 											}
 
 											debug_start_loc = header + (rx_num * tx_num) * 2;
 											for (unsigned int j = 0; j < (rx_num + tx_num); j++) {
-												if ((j % rx_num) == 0)
+												if ((j % rx_num) == 0) {
 													hx_printf("\n DEBUG:");
+													log(fp, "\n DEBUG:");
+												}
 												hx_printf(" %6d", ((int16_t)frame[debug_start_loc + j * 2]) + (((int16_t)frame[debug_start_loc + j * 2 + 1]) << 8));
+												log(fp, " %6d", ((int16_t)frame[debug_start_loc + j * 2]) + (((int16_t)frame[debug_start_loc + j * 2 + 1]) << 8));
 											}
 											hx_printf("\n");
+											log(fp, "\n");
 											break;
 										} else {
 											/* hx_printf("header : %02X %02X %02X %02X %02X\nData:\n",
@@ -2479,17 +2539,22 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 									if (bSelfTestCompleted) {
 										if (retry_cnt == retry_limit) {
 											hx_printf("Failed to get data for compare!\n");
+											log(fp, "Failed to get data for compare!\n");
 											goto NEXT_ITEM;
 										} else {
 											hx_printf("Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
+											log(fp, "Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
 											if (!test_items[i].testResult) {
 												hx_printf("(rx:%d, tx:%d) : %d\n",
+													test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
+												log(fp, "(rx:%d, tx:%d) : %d\n",
 													test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
 											}
 										}
 									}
 								} else {
 									hx_printf("Failed to issue self test command.\n");
+									log(fp, "Failed to issue self test command.\n");
 								}
 NEXT_ITEM:
 								usleep(0);
@@ -2498,21 +2563,36 @@ NEXT_ITEM:
 							ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
 							if (ret == 0) {
 								hx_printf("Reset self test....\n");
+								log(fp, "Reset self test....\n");
 							} else {
 								hx_printf("Reset self test failed!\n");
+								log(fp, "Reset self test failed!\n");
 							}
 						}
 					}
 				}
 				for (uint32_t i = 0; i < sizeof(test_items)/sizeof(hid_self_test_support_item_t); i++) {
 					if (test_items[i].activated) {
+						overall_result &= test_items[i].testResult;
 						printf("%s test result : %s! ", test_items[i].name, test_items[i].testResult?"Pass":"Fail");
+						log(fp, "%s test result : %s! ", test_items[i].name, test_items[i].testResult?"Pass":"Fail");
 						if (!test_items[i].testResult) {
 							printf("fail sample (rx : %d, tx : %d) : %d\n", test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
+							log(fp, "fail sample (rx : %d, tx : %d) : %d\n", test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
 						} else {
 							printf("\n");
+							log(fp, "\n");
 						}
 					}
+				}
+				if (fp != NULL) {
+					fclose(fp);
+					snprintf(final_output_pathname, sizeof(final_output_pathname), "%s/%s_%s%s",
+						opt_data.criteria_output_path, overall_result?"PASS":"FAIL","hx_mp_test_log_", fname_only);
+					if (rename(tmp_output_pathname, final_output_pathname) == 0)
+						hx_printf("Log file saved to %s\n", final_output_pathname);
+					else
+						hx_printf("Failed to rename log file from %s to %s\n", tmp_output_pathname, final_output_pathname);
 				}
 			} else {
 				hx_printf("Id parsing failed, return!\n");
