@@ -35,4 +35,5 @@ int hid_write_reg(OPTDATA& opt_data);
 int hid_read_reg(OPTDATA& opt_data);
 int hid_show_diag(OPTDATA& opt_data);
 int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn);
+int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo);
 #endif

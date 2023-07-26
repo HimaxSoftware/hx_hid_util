@@ -43,9 +43,10 @@ enum or_option {
 	OPTION_HID_PARTIAL_SAVE_FILE = 1 << 13,
 	OPTION_HID_PARTIAL_DISPLAY_SIGNED = 1 << 14,
 	OPTION_HID_CRITERIA_OUTPUT_PATH = 1 << 15,
+	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 16
 };
 
-const int mutual_shift_bit = 16;
+const int mutual_shift_bit = 17;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),

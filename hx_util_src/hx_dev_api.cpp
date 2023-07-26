@@ -2784,6 +2784,47 @@ DIAG_FUNC_END:
 	return ret;
 }
 
+int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
+{
+	int ret;
+	uint8_t read_back[4] = {0};
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			int sz = hx_hid_get_size_by_id(HID_INPUT_RD_EN_ID);
+			if (sz > 0) {
+				ret = hx_hid_get_feature(HID_INPUT_RD_EN_ID, read_back, sz);
+				if (ret < 0) {
+					hx_printf("Read back failed!\n");
+					ret = -EIO;
+				} else {
+					hx_printf("current : %d\n", read_back[0]);
+				}
+				uint32_t en = opt_data.input_en.b[0];
+				if (en != read_back[0]) {
+					ret = hx_hid_set_feature(HID_INPUT_RD_EN_ID, (uint8_t *)&en, sz);
+					if (ret < 0) {
+						ret = -EIO;
+						goto END_SET_RD_EN;
+					}
+					hx_printf("set ID %d to %d\n", HID_INPUT_RD_EN_ID, en);
+				} else {
+					hx_printf("desired en is current en, no need to set!\n");
+				}
+			} else {
+				ret = -ENOENT;
+			}
+		} else {
+			ret = -ENOENT;
+		}
+END_SET_RD_EN:
+		hx_hid_close();
+		return ret;
+	} else {
+		return -ENODEV;
+	}
+}
+
 int hid_update_DEVINFO(DEVINFO& oinfo)
 {
 	int found = 0;
