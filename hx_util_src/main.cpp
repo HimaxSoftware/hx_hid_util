@@ -30,9 +30,9 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.2.5"
+#define HX_UTIL_VER "V1.2.6"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -72,6 +72,8 @@ static struct option long_option[] = {
 	{"hid-partial-display-save-fname", 1, NULL, 'X'},
 	{"hid-partial-display-show", 0, NULL, 'Z'},
 	{"hid-partial-display-signed", 0, NULL, 'Y'},
+
+	{"hid-set-touch-RD-report-en", 1, NULL, 'e'},
 
 	{"hid-criteria-log-path", 1, NULL, 'o'},
 	{0, 0, 0, 0},
@@ -127,6 +129,8 @@ void print_help(const char *prog_name)
 	printf("\t-X, --hid-partial-display-save-fname\tSave partial display data to file, parameter is file name.\n");
 	printf("\t-Z, --hid-partial-display-show\tShow partial display data.\n");
 	printf("\t-Y, --hid-partial-display-signed\tShow partial display data with signed.\n");
+
+	printf("\t-e, --hid-set-touch-RD-report-en\tDisable enable touch input report descriptor in next request RD.\n");
 
 	printf("\t-o, --hid-criteria-log-path\tSet criteria log path.\n");
 }
@@ -353,6 +357,14 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 			optp->options |= OPTION_HID_CRITERIA_OUTPUT_PATH;
 			optp->criteria_output_path = optarg;
 			break;
+		case 'e':
+			if (sscanf(optarg, "%d", &(optp->input_en.i)) == EOF) {
+				optp->input_en.i = 0;
+				hx_printf("parsing touch input RD en error!\n");
+				break;
+			}
+			optp->options |= OPTION_HID_SET_TOUCH_INPUT_RD_EN;
+			break;
 		default:
 			break;
 		}
@@ -426,6 +438,13 @@ int main(int argc, char *argv[])
 
 	if (opt_data.options & OPTION_HID_SHOW_REPORT) {
 		ret = hid_print_report_descriptor(opt_data);
+		if (ret < 0) {
+			goto MAIN_END;
+		}
+	}
+
+	if (opt_data.options & OPTION_HID_SET_TOUCH_INPUT_RD_EN) {
+		ret = hid_set_input_RD_en(opt_data, dev_info);
 		if (ret < 0) {
 			goto MAIN_END;
 		}
