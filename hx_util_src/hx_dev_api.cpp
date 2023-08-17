@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #include <sys/time.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
@@ -2791,48 +2792,6 @@ int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
 		if (hx_hid_parse_RD_for_idsz() == 0) {
-			int sz = hx_hid_get_size_by_id(HID_INPUT_RD_EN_ID);
-			if (sz > 0) {
-				ret = hx_hid_get_feature(HID_INPUT_RD_EN_ID, read_back, sz);
-				if (ret < 0) {
-					hx_printf("Read back failed!\n");
-					ret = -EIO;
-				} else {
-					hx_printf("current : %d\n", read_back[0]);
-				}
-				uint32_t en = opt_data.input_en.b[0];
-				if (en != read_back[0]) {
-					ret = hx_hid_set_feature(HID_INPUT_RD_EN_ID, (uint8_t *)&en, sz);
-					if (ret < 0) {
-						ret = -EIO;
-						goto END_SET_RD_EN;
-					}
-					hx_printf("set ID %d to %d\n", HID_INPUT_RD_EN_ID, en);
-				} else {
-					hx_printf("desired en is current en, no need to set!\n");
-				}
-			} else {
-				ret = -ENOENT;
-			}
-		} else {
-			ret = -ENOENT;
-		}
-END_SET_RD_EN:
-		hx_hid_close();
-		return ret;
-	} else {
-		return -ENODEV;
-	}
-}
-
-int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
-{
-	int ret;
-	uint8_t read_back[4] = {0};
-	hx_hid_info oinfo;
-
-	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
 			// if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0)
 				// hx_printf("got dev info\n");
 
@@ -2853,8 +2812,15 @@ int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
 						goto END_SET_RD_EN;
 					}
 					hx_printf("set ID %d to %d\n", HID_INPUT_RD_EN_ID, en);
-				} else {
-					hx_printf("desired en is current en, no need to set!\n");
+					ret = hx_hid_get_feature(HID_INPUT_RD_EN_ID, read_back, sz);
+					if (ret < 0) {
+						hx_printf("Read back failed!\n");
+						ret = -EIO;
+					} else {
+						hx_printf("Read ID %d back : %X\n", HID_INPUT_RD_EN_ID, read_back[0]);
+						opt_data.options |= OPTION_REBIND;
+						ret = 0;
+					}
 				}
 			} else {
 				ret = -ENOENT;
@@ -3064,5 +3030,474 @@ ALLOCATE_FAILED:
 SETUP_FAILED:
 	hx_hid_close();
 	
+	return ret;
+}
+
+static void print_data(OPTDATA& opt_data, float *frame, int32_t rx_num, int32_t tx_num, bool printInt = false)
+{
+	hx_printf("       ");
+	for(int i = 0; i < rx_num; i++) {
+		hx_printf(" RX[%02d]", i + 1);
+	}
+	for (int i = 0; i < (rx_num * tx_num); i++) {
+		if ((i % rx_num) == 0)
+			hx_printf("\nTX[%02d]:", i/rx_num + 1);
+
+		if (printInt)
+			hx_printf(" %6d", (int16_t)frame[i]);
+		else
+			hx_printf(" %6.2f", frame[i]);
+	}
+	hx_printf("\n");
+}
+
+static float frame_avg(float *frame, int32_t rx_num, int32_t tx_num)
+{
+	float avg = 0.0f;
+
+	for (int i = 0; i < rx_num * tx_num; i++) {
+		avg += frame[i];
+	}
+
+	return avg / (rx_num * tx_num);
+}
+
+struct pv_t {
+	int32_t x;
+	int32_t y;
+	float v;
+};
+
+static struct pv_t* frame_max(float *frame, int32_t rx_num, int32_t tx_num)
+{
+	float max = -1000;
+	int32_t x = 0;
+	int32_t y = 0;
+	static struct pv_t pv;
+
+	for (int i = 0; i < rx_num * tx_num; i++) {
+		if (frame[i] > max) {
+			max = frame[i];
+			x = (i / rx_num);
+			y = (i % rx_num);
+		}
+	}
+
+	pv.x = x;
+	pv.y = y;
+	pv.v = max;
+
+	return &pv;
+}
+
+static void frame_sqrt(float *in, float *out, uint32_t sz)
+{
+	for (int i = 0; i < sz; i++) {
+		out[i] = sqrt(in[i]);
+	}
+}
+
+static float snr_cal(float signal, float noise)
+{
+	return 20 * log10(signal / noise);
+}
+
+int hid_snr_calculation(OPTDATA& opt_data)
+{
+	int ret = 0;
+	hx_hid_info info;
+	int rx_num;
+	int tx_num;
+	int sz;
+	int mutual_sz;
+	uint8_t *frame = NULL;
+	float *base_frame = NULL;
+	float *f_tmp_frame = NULL;
+	float *signal_frames = NULL;
+	float *signal_average_frame = NULL;
+	float *statistic_frames = NULL;
+	int32_t n_frames;
+	int32_t retry_cnt;
+	float untouched_sd_avg;
+	float untouched_sd_avg_max;
+	float untouched_sd_max_avg;
+	int16_t untouched_sd_max;
+	float touched_avg_max;
+	float touched_signal_avg;
+	int16_t touched_max;
+	float frame_signal;
+	float block_signal;
+	float noise_sd_avg;
+	float noise_sd_max;
+	float max_snr;
+	float max_avg_snr;
+	float avg_snr;
+	bool collected;
+	struct pv_t *pv;
+	const unsigned int header = 5;
+	const int32_t retry_limit = 10;
+	union {
+		uint32_t i;
+		uint16_t s[2];
+		uint8_t b[4];
+	} tmp_data;
+	enum {
+		touched_sd_frame = 0,
+		un_touched_sd_frame,
+		statics_MAX
+	};
+	enum {
+		base_frame_idx = 0,
+		signal_average_frame_idx,
+		tmp_frame_idx,
+		IDX_MAX
+	};
+
+	if (hx_scan_open_hidraw(opt_data) < 0) {
+		return -EIO;
+	}
+
+	if (hx_hid_parse_RD_for_idsz() < 0) {
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) != 0) {
+		hx_printf("Get HID_CFG_ID failed!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	rx_num = info.rx;
+	tx_num = info.tx;
+	mutual_sz = rx_num * tx_num;
+	if (mutual_sz <= 0) {
+		hx_printf("Mutual size is incorrect!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+	if (sz <= 0) {
+		hx_printf("Size of HID_TOUCH_MONITOR_ID is incorrect!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	if (hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID) <= 0) {
+		hx_printf("No HID_TOUCH_MONITOR_ID in RD!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
+	tmp_data.i = HID_DIAG_RAW_DATA;
+	ret = hx_hid_set_feature(HID_TOUCH_MONITOR_SEL_ID, tmp_data.b, 4);
+	if (ret < 0) {
+		hx_printf("Set HID_TOUCH_MONITOR_SEL_ID to 0x%02X failed!\n", tmp_data.i);
+		ret = -EFAULT;
+		goto SET_DATA_TYPE_FAILED;
+	}
+
+	// Force Active
+	uint8_t reg_n_data[9];
+	reg_n_data[0] = 0x1;// 1: write reg
+	opt_data.w_reg_addr.i = 0x10007FD4;
+	opt_data.w_addr_size = 4;
+	/* 0xABABABAB : force idle
+	 * 0xCDCDCDCD : force active
+	 * 0x00000000 : normal operation
+	 */
+	opt_data.w_reg_data.i = 0xCDCDCDCD;
+	opt_data.w_data_size = 4;
+	memcpy(reg_n_data + 1, &(opt_data.w_reg_addr.b[0]), opt_data.w_addr_size);
+	memcpy(reg_n_data + 1 + 4, &(opt_data.w_reg_data.b[0]), opt_data.w_data_size);
+	ret = hx_hid_set_feature(HID_REG_RW_ID, reg_n_data, sizeof(reg_n_data));
+	if (ret < 0) {
+		hx_printf("Set force active failed!\n");
+		ret = -EFAULT;
+		goto FORCE_ACTIVE_FAILED;
+	}
+
+	frame = (uint8_t *)malloc(sz);
+	if (frame == NULL) {
+		hx_printf("Allocate memory for frame failed!\n");
+		ret = -ENOMEM;
+		goto ALLOCATE_FAILED;
+	}
+
+	base_frame = (float *)malloc(mutual_sz * sizeof(float) * IDX_MAX);
+	if (base_frame == NULL) {
+		hx_printf("Allocate memory for base frame failed!\n");
+		ret = -ENOMEM;
+		goto ALLOCATE_BASE_FAILED;
+	}
+	memset(base_frame, 0, mutual_sz * sizeof(float) * IDX_MAX);
+	signal_average_frame = (float *)((uint8_t *)base_frame + mutual_sz * sizeof(float) * signal_average_frame_idx);
+	f_tmp_frame = (float *)((uint8_t *)base_frame + mutual_sz * sizeof(float) * tmp_frame_idx);
+
+	signal_frames = (float *)malloc(mutual_sz * sizeof(float) * opt_data.snr_signal_noise_frames);
+	if (signal_frames == NULL) {
+		hx_printf("Allocate memory for signal frames failed!\n");
+		ret = -ENOMEM;
+		goto ALLOCATE_SIGNAL_FAILED;
+	}
+	memset(signal_frames, 0, mutual_sz * sizeof(float) * opt_data.snr_signal_noise_frames);
+
+	statistic_frames = (float *)malloc(mutual_sz * sizeof(float) * statics_MAX);
+	if (statistic_frames == NULL) {
+		hx_printf("Allocate memory for noise frames failed!\n");
+		ret = -ENOMEM;
+		goto ALLOCATE_STATISTIC_FAILED;
+	}
+	memset(statistic_frames, 0, mutual_sz * sizeof(float) * statics_MAX);
+
+	hx_printf("Collecting un-touched data to calculate base data, please leave the panel clean!\n");
+	hx_printf("Press ENTER when ready...\n");
+	getchar();
+	retry_cnt = 0;
+	n_frames = 0;
+	untouched_sd_max_avg = 0;
+	untouched_sd_max = 0;
+	collected = false;
+	while (n_frames <= (opt_data.snr_base_frames + opt_data.snr_ignore_frames + opt_data.snr_signal_noise_frames)) {
+		if (retry_cnt >= retry_limit) {
+			hx_printf("Get base frame failed!\n");
+			break;
+		}
+		ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
+		if (ret == 0) {
+			if ((frame[1] == 0x5A) && (frame[2] == 0xA5)) {
+				retry_cnt = 0;
+				if (n_frames == (opt_data.snr_base_frames + opt_data.snr_ignore_frames + opt_data.snr_signal_noise_frames)) {
+					for (int i = 0; i < mutual_sz; i++) {
+						statistic_frames[un_touched_sd_frame * mutual_sz + i] = 
+							statistic_frames[un_touched_sd_frame * mutual_sz + i] / opt_data.snr_signal_noise_frames;
+					}
+					hx_printf("Base frame calculated, un-touched statistic calculated, total get %d frames and ignore %d frames\n",
+						n_frames, opt_data.snr_ignore_frames);
+					hx_printf("Base frame:\n");
+					print_data(opt_data, base_frame, rx_num, tx_num, true);
+					hx_printf("Un-touched statistic:\n");
+					hx_printf("SD frame:\n");
+					frame_sqrt(&statistic_frames[un_touched_sd_frame * mutual_sz],
+						f_tmp_frame, mutual_sz);
+					print_data(opt_data, f_tmp_frame, rx_num, tx_num);
+
+					untouched_sd_avg = frame_avg(f_tmp_frame, rx_num, tx_num);
+					untouched_sd_avg_max = frame_max(f_tmp_frame, rx_num, tx_num)->v;
+					hx_printf("Un-touched Standard Deviation Noise AVG: %f, "
+						"Standard Deviation Noise MAX: %f\n",
+						untouched_sd_avg, untouched_sd_avg_max);
+
+					hx_printf("Un-touched Average of Max Noise: %f, Max noise: %d\n", untouched_sd_max_avg, untouched_sd_max);
+
+					collected = true;
+					break;
+				} else if (n_frames >= (opt_data.snr_ignore_frames + opt_data.snr_base_frames)) {
+					uint16_t *tmp_frame = (uint16_t *)(frame + header);
+					float tmp;
+					float max = -1000;
+					if (n_frames == (opt_data.snr_ignore_frames + opt_data.snr_base_frames)) {
+						for (int i = 0; i < mutual_sz; i++) {
+							base_frame[i] = base_frame[i] / (float)opt_data.snr_base_frames;
+						}
+					}
+					// calculate Standard Deviation
+					for (int i = 0; i < mutual_sz; i++) {
+						tmp = (float)tmp_frame[i] - base_frame[i];
+						if (tmp > max)
+							max = tmp;
+						if (tmp > untouched_sd_max)
+							untouched_sd_max = tmp;
+						tmp *= tmp;
+						statistic_frames[un_touched_sd_frame * mutual_sz + i] += tmp;
+					}
+					untouched_sd_max_avg += max;
+				} else if (n_frames >= (opt_data.snr_ignore_frames)) {
+					uint16_t *tmp_frame = (uint16_t *)(frame + header);
+					for (int i = 0; i < mutual_sz; i++) {
+						base_frame[i] += tmp_frame[i];
+					}
+				}
+				n_frames++;
+			} else {
+				usleep(16 * 1000);
+				retry_cnt++;
+			}
+		} else {
+			hx_printf("Get frame failed!\n");
+			goto GET_BASE_FAILED;
+		}
+	}
+	if (collected) {
+		hx_printf("Start SNR test, please put the finger at desire position on panel and keep the position.\n");
+		hx_printf("Press ENTER when ready...\n");
+		getchar();
+		retry_cnt = 0;
+		n_frames = 0;
+		collected = false;
+		int32_t sig_idx = 0;
+		while (n_frames <= opt_data.snr_signal_noise_frames + opt_data.snr_ignore_frames) {
+			if (retry_cnt >= retry_limit) {
+				hx_printf("Get base frame failed!\n");
+				break;
+			}
+			ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
+			if (ret == 0) {
+				if ((frame[1] == 0x5A) && (frame[2] == 0xA5)) {
+					retry_cnt = 0;
+					if (n_frames == (opt_data.snr_signal_noise_frames + opt_data.snr_ignore_frames)) {
+						hx_printf("Touched frames collected, total get %d frames and ignore %d frames\n",
+							n_frames, opt_data.snr_ignore_frames);
+						collected = true;
+						break;
+					} else if (n_frames >= (opt_data.snr_ignore_frames)) {
+						uint16_t *tmp_frame;
+						float tmp;
+						for (int i = 0; i < mutual_sz; i++) {
+							tmp_frame = (uint16_t *)(frame + header);
+							tmp = tmp_frame[i];
+							tmp = tmp - base_frame[i];
+
+							// if (tmp < opt_data.snr_touch_threshold) {
+							// 	tmp = 0;
+							// }
+
+							signal_frames[sig_idx * mutual_sz + i] = tmp;
+							signal_average_frame[i] += signal_frames[sig_idx * mutual_sz + i];
+							// signal_average_frame[i] += fabs(signal_frames[sig_idx * mutual_sz + i]);
+						}
+						// print_data(opt_data, &(signal_frames[sig_idx * mutual_sz]), rx_num, tx_num);
+						sig_idx++;
+					}
+					n_frames++;
+				} else {
+					usleep(16 * 1000);
+					retry_cnt++;
+				}
+			} else {
+				hx_printf("Get frame failed!\n");
+				goto GET_BASE_FAILED;
+			}
+		}
+		for (int i = 0; i < mutual_sz; i++) {
+			signal_average_frame[i] = signal_average_frame[i] / sig_idx;
+		}
+
+		touched_avg_max = 0;
+		touched_max = 0;
+		frame_signal = 0.0f;
+		block_signal = 0.0f;
+		touched_signal_avg = 0.0f;
+		if (collected) {
+			int32_t x;
+			int32_t y;
+			hx_printf("Signal average frame:\n");
+			print_data(opt_data, signal_average_frame, rx_num, tx_num);
+			for (int i = 0; i < opt_data.snr_signal_noise_frames; i++) {
+				float tmp;
+				float max = 0;
+				// print_data(opt_data, (uint16_t *)&(signal_frames[i * mutual_sz]), rx_num, tx_num, false);
+				pv = frame_max(&(signal_frames[i * mutual_sz]), rx_num, tx_num);
+				if (i == 0) {
+					x = pv->x;
+					y = pv->y;
+					frame_signal = pv->v;
+					block_signal = pv->v;
+				} else {
+					frame_signal += pv->v;
+					block_signal += signal_frames[i * mutual_sz + x * rx_num + y];
+				}
+
+				// calculate Standard deviation
+				float local_avg = 0.0f;
+				int32_t touched_block_count = 0;
+				for (int j = 0; j < mutual_sz; j++) {
+					tmp = signal_frames[i * mutual_sz + j];
+					if (opt_data.snr_touch_threshold >= 0) {
+						if (tmp > opt_data.snr_touch_threshold) {
+							touched_block_count++;
+							local_avg += tmp;
+						}
+					} else {
+						touched_block_count++;
+						local_avg += tmp;
+					}
+					if (tmp > max)
+						max = tmp;
+					if (tmp > touched_max)
+						touched_max = tmp;
+					tmp -= signal_average_frame[j];
+					tmp *= tmp;
+					statistic_frames[touched_sd_frame * mutual_sz + j] += tmp;
+				}
+				touched_avg_max += max;
+				touched_signal_avg += local_avg / touched_block_count;
+			}
+			for (int i = 0; i < mutual_sz; i++) {
+				statistic_frames[touched_sd_frame * mutual_sz + i] = 
+					statistic_frames[touched_sd_frame * mutual_sz + i] / opt_data.snr_signal_noise_frames;
+			}
+			touched_avg_max = touched_avg_max / opt_data.snr_signal_noise_frames;
+			touched_signal_avg = touched_signal_avg / opt_data.snr_signal_noise_frames;
+			frame_signal = frame_signal / opt_data.snr_signal_noise_frames;
+			block_signal = block_signal / opt_data.snr_signal_noise_frames;
+			hx_printf("Touched statistic:\n");
+			hx_printf("Noise SD frame:\n");
+			frame_sqrt(&statistic_frames[touched_sd_frame * mutual_sz],
+				f_tmp_frame, mutual_sz);
+			print_data(opt_data, f_tmp_frame, rx_num, tx_num);
+			noise_sd_avg = frame_avg(f_tmp_frame, rx_num, tx_num);
+			noise_sd_max = frame_max(f_tmp_frame, rx_num, tx_num)->v;
+			hx_printf("Noise SD AVG: %f, Noise SD MAX: %f\n",
+				noise_sd_avg, noise_sd_max);
+
+			hx_printf("Touched Average of Max Noise: %f, Max noise: %d\n", touched_avg_max, touched_max);
+
+			hx_printf("[Signal]Touched Signal=> average MAX signal: %f, average signal: %f\n",
+				frame_signal, touched_signal_avg);
+			hx_printf("[Noise]Un-touched Standard Deviation Noise AVG: %f\n", untouched_sd_avg);
+
+			max_snr = snr_cal(block_signal, untouched_sd_avg);
+			max_avg_snr = snr_cal(frame_signal, untouched_sd_avg);
+			avg_snr = snr_cal(touched_signal_avg, untouched_sd_avg);
+
+			hx_printf("TouchedSignal-to-UntouchedNoiseSD SNR:\n");
+			hx_printf("Average of MAX SNR: %f, Average SNR: %f\n", max_avg_snr, avg_snr);
+
+			// max_snr = snr_cal(block_signal, noise_sd_avg);
+			// max_avg_snr = snr_cal(frame_signal, noise_sd_avg);
+			// avg_snr = snr_cal(touched_signal_avg, noise_sd_avg);
+
+			// hx_printf("TouchedSignal-to-TouchedNoise SNR:\n");
+			// hx_printf("[SD base]Max SNR: %f, Max of Average SNR: %f, Average SNR: %f\n", max_snr, max_avg_snr, avg_snr);
+		}
+	}
+
+GET_BASE_FAILED:
+	free(statistic_frames);
+ALLOCATE_STATISTIC_FAILED:
+	free(signal_frames);
+ALLOCATE_SIGNAL_FAILED:
+	free(base_frame);
+ALLOCATE_BASE_FAILED:
+	free(frame);
+ALLOCATE_FAILED:
+	opt_data.w_reg_data.i = 0;
+	memcpy(reg_n_data + 1 + 4, &(opt_data.w_reg_data.b[0]), opt_data.w_data_size);
+	ret = hx_hid_set_feature(HID_REG_RW_ID, reg_n_data, sizeof(reg_n_data));
+	if (ret < 0) {
+		hx_printf("Set normal mode failed!\n");
+	}
+FORCE_ACTIVE_FAILED:
+	tmp_data.i = HID_DIAG_NORAML_DATA;
+	ret = hx_hid_set_feature(HID_TOUCH_MONITOR_SEL_ID, tmp_data.b, 4);
+	if (ret < 0) {
+		hx_printf("Set HID_TOUCH_MONITOR_SEL_ID to 0x%02X failed!\n", tmp_data.i);
+	}
+SET_DATA_TYPE_FAILED:
+SETUP_FAILED:
+	hx_hid_close();
+
 	return ret;
 }

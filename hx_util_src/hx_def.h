@@ -65,6 +65,7 @@ enum mutual_option {
 	OPTION_HID_SHOW_PID_BY_HID_INFO = (1 + 12) << mutual_shift_bit,
 	OPTION_HID_SHOW_FW_VER_BY_HID_INFO = (1 + 13) << mutual_shift_bit,
 	OPTION_HID_PARTIAL_EN_POLLING_RATE = (1 + 14) << mutual_shift_bit,
+	OPTION_HID_SNR_CALCULATE = (1 + 15) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
@@ -83,6 +84,11 @@ enum mutual_option {
 #define HID_SELF_TEST_MICRO_OPEN	(0x13)
 #define HID_SELF_TEST_RAWDATA		(0x21)
 #define HID_SELF_TEST_NOISE			(0x22)
+
+#define HID_DIAG_DIFF_DATA			(0x09)
+#define HID_DIAG_RAW_DATA			(0x0A)
+#define HID_DIAG_BASE_DATA			(0x0B)
+#define HID_DIAG_NORAML_DATA		(0x00)
 
 typedef	struct optdata {
 	uint32_t options;
@@ -120,6 +126,12 @@ typedef	struct optdata {
 	int32_t self_test_spec_min;
 	char *criteria_path;
 	char *criteria_output_path;
+
+	int32_t snr_param_cnt;
+	int32_t snr_ignore_frames;
+	int32_t snr_base_frames;
+	int32_t snr_signal_noise_frames;
+	int32_t snr_touch_threshold;
 
 	uint32_t partial_en_polling_rate;
 	char *partial_save_file;

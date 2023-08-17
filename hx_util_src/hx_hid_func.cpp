@@ -469,6 +469,8 @@ int hx_hid_parse_RD_for_idsz(void)
 	uint8_t current_desc[255] = {0};
 	uint32_t current_value;
 	uint32_t current_usage_page = 0;
+	int c_id = -1;
+	int32_t c_size = -1;
 	
 	ret = ioctl(g_hidfd, HIDIOCGRDESCSIZE, &rdsize);
 	if (ret < 0)
@@ -530,7 +532,15 @@ int hx_hid_parse_RD_for_idsz(void)
 	}
 	hx_printf("Mappings:\n");
 	for (int i = 0; i < g_hid_id_sz_mapping_count; i++) {
-		hx_printf("id: %d, size: %d\n", g_hid_id_size_mapping[i].id, g_hid_id_size_mapping[i].sz);
+		if (g_hid_id_size_mapping[i].id != c_id) {
+			if (c_id != -1) {
+				hx_printf("id: %d, size: %d\n", c_id, c_size);
+			}
+			c_id = g_hid_id_size_mapping[i].id;
+			c_size = g_hid_id_size_mapping[i].sz;
+		} else {
+			c_size += g_hid_id_size_mapping[i].sz;
+		}
 	}
 
 	return 0;

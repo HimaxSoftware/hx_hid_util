@@ -30,9 +30,9 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.2.6"
+#define HX_UTIL_VER "V1.2.7"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:n:"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -74,6 +74,8 @@ static struct option long_option[] = {
 	{"hid-partial-display-signed", 0, NULL, 'Y'},
 
 	{"hid-set-touch-RD-report-en", 1, NULL, 'e'},
+
+	{"hid-snr-calculation", 1, NULL, 'n'},
 
 	{"hid-criteria-log-path", 1, NULL, 'o'},
 	{0, 0, 0, 0},
@@ -131,6 +133,8 @@ void print_help(const char *prog_name)
 	printf("\t-Y, --hid-partial-display-signed\tShow partial display data with signed.\n");
 
 	printf("\t-e, --hid-set-touch-RD-report-en\tDisable enable touch input report descriptor in next request RD.\n");
+
+	printf("\t-n, --hid-snr-calculation\tCalculate SNR, parameter 1st is ignore frame count, 2nd is base frame count, 3rd is noise/signal frame count, 4th is touch threshold\n");
 
 	printf("\t-o, --hid-criteria-log-path\tSet criteria log path.\n");
 }
@@ -365,6 +369,43 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 			}
 			optp->options |= OPTION_HID_SET_TOUCH_INPUT_RD_EN;
 			break;
+		case 'n':
+			if (optp->snr_param_cnt == 0) {
+				if (sscanf(optarg, "%d", &(optp->snr_ignore_frames)) == EOF) {
+					optp->snr_ignore_frames = 10;
+					hx_printf("parsing n ignore frames error!\n");
+					break;
+				}
+				optp->snr_param_cnt++;
+				break;
+			} else if (optp->snr_param_cnt == 1) {
+				if (sscanf(optarg, "%d", &(optp->snr_base_frames)) == EOF) {
+					optp->snr_base_frames = 30;
+					hx_printf("parsing n base frames error!\n");
+					break;
+				}
+				optp->snr_param_cnt++;
+				break;
+			} else if (optp->snr_param_cnt == 2) {
+				if (sscanf(optarg, "%d", &(optp->snr_signal_noise_frames)) == EOF) {
+					optp->snr_signal_noise_frames = 30;
+					hx_printf("parsing n signal/noise frames error!\n");
+					break;
+				}
+				optp->snr_param_cnt++;
+				break;
+			} else if (optp->snr_param_cnt == 3) {
+				if (sscanf(optarg, "%d", &(optp->snr_touch_threshold)) == EOF) {
+					optp->snr_touch_threshold = 1500;
+					hx_printf("parsing n touch threshold error!\n");
+					break;
+				}
+				optp->snr_param_cnt++;
+			}
+			hx_printf("SNR calculation with ignore frames = %d, base frames = %d, signal/noise frames = %d, touch threshold = %d\n",
+				optp->snr_ignore_frames, optp->snr_base_frames, optp->snr_signal_noise_frames, optp->snr_touch_threshold);
+			optp->options = OPTION_HID_SNR_CALCULATE | (optp->options & OPTION_NONE);
+			break;
 		default:
 			break;
 		}
@@ -470,6 +511,10 @@ int main(int argc, char *argv[])
 		ret = hid_read_reg(opt_data);
 	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SHOW_DIAG) {
 		ret = hid_show_diag(opt_data);
+		if (opt_data.options & OPTION_HID_SET_DATA_TYPE) {
+			opt_data.param.i = HID_DIAG_NORAML_DATA;
+			ret |= hid_set_data_type(opt_data);
+		}
 	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_MAIN_UPDATE) {
 		int errorCode = 0;
 		ret = hid_main_update(opt_data, dev_info, errorCode);
@@ -493,6 +538,8 @@ int main(int argc, char *argv[])
 		is_partial_en = true;
 		signal(SIGINT, handleCtrlC);
 		ret = hid_polling_partial_data(opt_data, is_partial_en);
+	} else if ((opt_data.options & OPTION_HID_SNR_CALCULATE) == OPTION_HID_SNR_CALCULATE) {
+		ret = hid_snr_calculation(opt_data);
 	}
 
 	if (opt_data.options & OPTION_REBIND) {
