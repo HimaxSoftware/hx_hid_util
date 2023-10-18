@@ -43,10 +43,11 @@ enum or_option {
 	OPTION_HID_PARTIAL_SAVE_FILE = 1 << 13,
 	OPTION_HID_PARTIAL_DISPLAY_SIGNED = 1 << 14,
 	OPTION_HID_CRITERIA_OUTPUT_PATH = 1 << 15,
-	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 16
+	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 16,
+	OPTION_HID_SHOW_VERSION = 1 << 17,
 };
 
-const int mutual_shift_bit = 17;
+const int mutual_shift_bit = 18;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),
@@ -178,7 +179,10 @@ typedef struct __attribute__((__packed__)) hx_hid_info_t {
 	uint16_t xres;
 	uint8_t pt_num;
 	uint8_t mkey_num;
-	uint8_t debug_info[78];
+	uint8_t pen_num;
+	uint16_t pen_yres;
+	uint16_t pen_xres;
+	uint8_t debug_info[73];
 } hx_hid_info;
 
 typedef enum param_type {

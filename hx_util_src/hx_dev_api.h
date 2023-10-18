@@ -31,6 +31,7 @@ int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& errorCode);
 int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& errorCode);
 int hid_self_test_by_criteria_file(OPTDATA& opt_data);
 int hid_show_fw_info(OPTDATA& opt_data);
+int hid_show_version(OPTDATA& opt_data);
 int hid_write_reg(OPTDATA& opt_data);
 int hid_read_reg(OPTDATA& opt_data);
 int hid_show_diag(OPTDATA& opt_data);
