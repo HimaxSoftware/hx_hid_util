@@ -1459,6 +1459,9 @@ int hid_show_fw_info(OPTDATA& opt_data)
 				hx_printf("%s : %d\n", "XRES", ((info.xres & 0xFF) << 8) + ((info.xres & 0xFF00) >> 8));
 				hx_printf("%s : %d\n", "PT_NUM", info.pt_num);
 				hx_printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
+				hx_printg("%s : %d\n", "PEN_NUM", info.pen_num);
+				hx_printf("%s : %d\n", "PEN_YRES", info.pen_yres);
+				hx_printf("%s : %d\n", "PEN_XRES", info.pen_xres);
 				hx_printf("FW layout : \n");
 				for (int i = 0; i < 9; i++)
 					hx_printf("\t%2X - start : %08X, Size %d kB\n", \
@@ -1468,6 +1471,26 @@ int hid_show_fw_info(OPTDATA& opt_data)
 						info.bl_mapping.cmd, info.bl_mapping.bin_start_offset * 1024, \
 						info.bl_mapping.unit_sz);
 			}
+		}
+
+		hx_hid_close();
+		return 0;
+	} else {
+		return -ENODEV;
+	}
+}
+
+int hid_show_version(OPTDATA& opt_data)
+{
+	int ret;
+	hx_hid_info info;
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
+		if (ret == 0) {
+			printf("%s : %02X %02X\n", "vid", info.vid[0], info.vid[1]);
+			printf("%s : %02X %02X\n", "pid", info.pid[0], info.pid[1]);
+			printf("%s : %02X %02X\n", "firmware verison", info.cid[0], info.cid[1]);
 		}
 
 		hx_hid_close();

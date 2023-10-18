@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Added
 - Add SNR function to calculate SNR on target device.  
+- Add hid_show_version option to correct customer view of firmware version.
+- Add pen information supported by firmware in hid_show_fw_info function.
 ## [1.2.5] - 2023-08-16
 ### Added
 - Self test log output to specified folder after each test.
