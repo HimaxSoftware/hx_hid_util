@@ -557,6 +557,9 @@ int main(int argc, char *argv[])
 	}
 
 	if (opt_data.options & OPTION_REBIND) {
+		if (opt_data.options & OPTION_HID_SET_TOUCH_INPUT_RD_EN) {
+			hid_set_input_RD_en(opt_data, dev_info);
+		}
 		if (hid_update_DEVINFO(dev_info) != 0) {
 			printf("Failed to get device info!\n");
 			return -ENODEV;
