@@ -45,9 +45,11 @@ enum or_option {
 	OPTION_HID_CRITERIA_OUTPUT_PATH = 1 << 15,
 	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 16,
 	OPTION_HID_SHOW_VERSION = 1 << 17,
+	OPTION_HID_TX_REVERSE = 1 << 18,
+	OPTION_HID_RX_REVERSE = 1 << 19,
 };
 
-const int mutual_shift_bit = 18;
+const int mutual_shift_bit = 20;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),
@@ -67,6 +69,7 @@ enum mutual_option {
 	OPTION_HID_SHOW_FW_VER_BY_HID_INFO = (1 + 13) << mutual_shift_bit,
 	OPTION_HID_PARTIAL_EN_POLLING_RATE = (1 + 14) << mutual_shift_bit,
 	OPTION_HID_SNR_CALCULATE = (1 + 15) << mutual_shift_bit,
+	OPTION_HID_SHOW_SPECIFY_DIAG = (1 + 16) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
@@ -134,6 +137,8 @@ typedef	struct optdata {
 	int32_t snr_signal_noise_frames;
 	int32_t snr_touch_threshold;
 
+	uint16_t ic_select;
+
 	uint32_t partial_en_polling_rate;
 	char *partial_save_file;
 } OPTDATA;
@@ -182,7 +187,8 @@ typedef struct __attribute__((__packed__)) hx_hid_info_t {
 	uint8_t pen_num;
 	uint16_t pen_yres;
 	uint16_t pen_xres;
-	uint8_t debug_info[73];
+	uint8_t ic_num;// [7:4](tx_ic_num - 1) | [3:0](rx_ic_num - 1)
+	uint8_t debug_info[72];
 } hx_hid_info;
 
 typedef enum param_type {
@@ -224,5 +230,10 @@ typedef struct hx_ic_fw_layout_mapping {
 } hx_ic_fw_layout_mapping_t;
 
 void hx_printf(const char *fmt, ...);
+
+#define IS_OR_OPTION_SET(opt, or_opt)	((opt & or_opt) > 0)
+#define IS_MUTUAL_OPTION_SET(opt, mutual_opt)	((opt & OPTION_MUTUAL_FILTER) == mutual_opt)
+
+bool is_opt_set(OPTDATA *opt_data, uint32_t option);
 
 #endif

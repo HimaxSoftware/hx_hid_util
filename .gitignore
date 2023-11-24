@@ -3,3 +3,5 @@ obj/
 build/
 .vscode/
 *.o
+*.zip
+*.7z

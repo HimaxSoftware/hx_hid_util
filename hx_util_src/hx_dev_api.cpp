@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Himax Technologies, Limited.
+ * Copyright (C) 2023 Himax Technologies, Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <endian.h>
 #include <sys/time.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
@@ -949,7 +950,7 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 	printf("fwid = %X\n", tmp_data[0] << 8 | tmp_data[1]);
 	printf("fwver = %X\n", tmp_data[2] << 8 | tmp_data[3]);
 
-	if (optp->options & OPTION_CMP_VER) {
+	if(is_opt_set(optp, OPTION_CMP_VER)) {
 		if (!himax_update_check(&fw)) {
 			printf("don't need update\n");
 			ret = 1;
@@ -957,7 +958,7 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 		}
 	}
 
-	if (optp->options & OPTION_ALL_LEN)
+	if(is_opt_set(optp, OPTION_ALL_LEN))
 		burnlen = fw.len;
 	else
 		burnlen = 0x3C000;
@@ -1023,13 +1024,13 @@ int show_info(DEVINFO *devp, OPTDATA *optp)
 	if (ret)
 		goto exit;
 
-	if (optp->options & OPTION_PID) {
+	if(is_opt_set(optp, OPTION_PID)) {
 		printf("%04X", data[0] << 8 | data[1]);
-	} else if (optp->options & OPTION_FW_VER) {
+	} else if(is_opt_set(optp, OPTION_FW_VER)) {
 		printf("%04X", (data[2] << 8 | data[3]));
 	}
 
-	if (optp->options & (OPTION_PID | OPTION_FW_VER)) {
+	if(is_opt_set(optp, (OPTION_PID | OPTION_FW_VER))) {
 		printf("\n");
 		ret = 0;
 		goto exit;
@@ -1433,9 +1434,9 @@ int hid_show_fw_info(OPTDATA& opt_data)
 	if (hx_scan_open_hidraw(opt_data) == 0) {
 		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
 		if (ret == 0) {
-			if ((opt_data.options & OPTION_HID_SHOW_PID_BY_HID_INFO) == OPTION_HID_SHOW_PID_BY_HID_INFO) {
+			if (is_opt_set(&opt_data, OPTION_HID_SHOW_PID_BY_HID_INFO)) {
 				printf("%02X%02X\n", info.pid[0], info.pid[1]);
-			} else if ((opt_data.options & OPTION_HID_SHOW_FW_VER_BY_HID_INFO) == OPTION_HID_SHOW_FW_VER_BY_HID_INFO) {
+			} else if (is_opt_set(&opt_data, OPTION_HID_SHOW_FW_VER_BY_HID_INFO)) {
 				printf("%02X%02X\n", info.cid[0], info.cid[1]);
 			} else {
 				hx_printf("%s : %02X %02X\n", "passwd", info.passwd[0], info.passwd[1]);
@@ -1455,13 +1456,18 @@ int hid_show_fw_info(OPTDATA& opt_data)
 				hx_printf("%s : %02X\n", "Display version", info.disp_version);
 				hx_printf("%s : %d\n", "RX", info.rx);
 				hx_printf("%s : %d\n", "TX", info.tx);
-				hx_printf("%s : %d\n", "YRES ", ((info.yres & 0xFF) << 8 ) + ((info.yres & 0xFF00) >> 8));
-				hx_printf("%s : %d\n", "XRES", ((info.xres & 0xFF) << 8) + ((info.xres & 0xFF00) >> 8));
+				info.yres = be16toh(info.yres);
+				hx_printf("%s : %d\n", "YRES ", info.yres);
+				info.xres = be16toh(info.xres);
+				hx_printf("%s : %d\n", "XRES", info.xres);
 				hx_printf("%s : %d\n", "PT_NUM", info.pt_num);
 				hx_printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
-				hx_printg("%s : %d\n", "PEN_NUM", info.pen_num);
+				hx_printf("%s : %d\n", "PEN_NUM", info.pen_num);
+				info.pen_yres = be16toh(info.pen_yres);
 				hx_printf("%s : %d\n", "PEN_YRES", info.pen_yres);
+				info.pen_xres = be16toh(info.pen_xres);
 				hx_printf("%s : %d\n", "PEN_XRES", info.pen_xres);
+				hx_printf("%s : %02X\n", "LTDI_IC_NUM", info.ic_num);
 				hx_printf("FW layout : \n");
 				for (int i = 0; i < 9; i++)
 					hx_printf("\t%2X - start : %08X, Size %d kB\n", \
@@ -1555,7 +1561,7 @@ int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 					}
 				}
 
-				if ((opt_data.options & OPTION_HID_FORCE_UPDATE) == 0) {
+				if (!is_opt_set(&opt_data, OPTION_HID_FORCE_UPDATE)) {
 					if (bOinfoValid)
 						bGoUpdate = (himax_update_check(&hxfw, &oinfo) > 0)?true:false;
 					else
@@ -1861,7 +1867,7 @@ int hid_set_data_type(OPTDATA& opt_data)
 	int ret;
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		uint32_t type = opt_data.param.b[0];
+		uint32_t type = opt_data.param.i | opt_data.ic_select << 16;
 #if 0
 		#define fw_addr_raw_out_sel                 0x100072EC
 		#define HID_RAW_OUT_DELTA					0x29
@@ -2225,21 +2231,354 @@ void log(FILE *fp, const char *fmt, ...)
 	va_end(ap);
 }
 
+int place_frame_in_full_map(uint16_t *full_map, uint16_t *frame, int full_rx, int full_tx,
+	int frame_pos_rx, int frame_pos_tx, int rx_num, int tx_num)
+{
+	if ((frame_pos_rx + rx_num) > full_rx) {
+		hx_printf("Error : frame_pos_rx(%d) + rx_num(%d) > full_rx(%d)\n", frame_pos_rx, rx_num, full_rx);
+		return -1;
+	}
+	if ((frame_pos_tx + tx_num) > full_tx) {
+		hx_printf("Error : frame_pos_tx(%d) + tx_num(%d) > full_tx(%d)\n", frame_pos_tx, tx_num, full_tx);
+		return -1;
+	}
+	for (int i = 0; i < tx_num; i++)
+		memcpy(full_map + frame_pos_tx * full_rx + i * full_rx + frame_pos_rx,
+		frame + i * rx_num, rx_num * sizeof(uint16_t));
+
+	return 0;
+}
+
+typedef struct hid_self_test_support_item {
+	const char *name;
+	bool hasLowerBond;
+	const char *lower_bond_keyword;
+	bool hasUpperBond;
+	const char *upper_bond_keyword;
+	uint32_t hid_switch;
+	bool testResult;
+	bool activated;
+	int32_t fail_rx;
+	int32_t fail_tx;
+	int32_t fail_v;
+} hid_self_test_support_item_t;
+
+bool compare_result(uint8_t *frame_data, hid_self_test_support_item_t *test_item, bool bUpperBondFound,
+	int32_t *upperBond_data, bool bLowerBondFound, int32_t *lowerBond_data, unsigned int rx_num, unsigned int tx_num)
+{
+	union { int32_t i; uint16_t s[2]; } usdata;
+
+	hx_printf("\nFull map:\n");
+	hx_printf("       ");
+	for(int j = 0; j < rx_num; j++) {
+		hx_printf(" RX[%02d]", j + 1);
+	}
+	for (int j = 0; j < (rx_num * tx_num); j++) {
+		if ((j % rx_num) == 0) {
+			hx_printf("\nTX[%02d]:", j/rx_num + 1);
+		}
+		usdata.i =
+			(int16_t)frame_data[j * 2] + (((int16_t)frame_data[j * 2 + 1]) << 8);
+		if (test_item->hid_switch == HID_SELF_TEST_NOISE)
+			usdata.i = *(int16_t *)&(usdata.s[0]);
+
+		hx_printf(" %6d", usdata.i);
+	}
+	hx_printf("\n");
+
+	test_item->testResult = true;
+	for (unsigned int j = 0; j < rx_num * tx_num; j++) {
+		usdata.i =
+			(int16_t)frame_data[j * 2] + (((int16_t)frame_data[j * 2 + 1]) << 8);
+		if (test_item->hid_switch == HID_SELF_TEST_NOISE)
+			usdata.i = *(int16_t *)&(usdata.s[0]);
+		if ((test_item->hasUpperBond) && bUpperBondFound) {
+			if (usdata.i > upperBond_data[j]) {
+				test_item->testResult = false;
+				test_item->fail_rx = (j % rx_num) + 1;
+				test_item->fail_tx = j/rx_num + 1;
+				test_item->fail_v = usdata.i;
+			} else {
+				test_item->testResult &= true;
+			}
+		}
+		if ((test_item->hasLowerBond) && bLowerBondFound) {
+			if (usdata.i < lowerBond_data[j]) {
+				test_item->testResult = false;
+				test_item->fail_rx = (j % rx_num) + 1;
+				test_item->fail_tx = j/rx_num + 1;
+				test_item->fail_v = usdata.i;
+			} else {
+				test_item->testResult &= true;
+			}
+		}
+	}
+
+	return test_item->testResult;
+}
+
+bool compare_result_with_fixed_bounds(uint8_t *frame_data, hid_self_test_support_item_t *test_item,
+	int32_t upperBond, int32_t lowerBond, bool signed_data,	unsigned int rx_num, unsigned int tx_num)
+{
+	union { int32_t i; uint16_t s[2]; } usdata;
+
+	hx_printf("\nFull map:\n");
+	hx_printf("       ");
+	for(int j = 0; j < rx_num; j++) {
+		hx_printf(" RX[%02d]", j + 1);
+	}
+	for (int j = 0; j < (rx_num * tx_num); j++) {
+		if ((j % rx_num) == 0) {
+			hx_printf("\nTX[%02d]:", j/rx_num + 1);
+		}
+		usdata.i =
+			(int16_t)frame_data[j * 2] + (((int16_t)frame_data[j * 2 + 1]) << 8);
+		if (test_item->hid_switch == HID_SELF_TEST_NOISE)
+			usdata.i = *(int16_t *)&(usdata.s[0]);
+
+		hx_printf(" %6d", usdata.i);
+	}
+	hx_printf("\n");
+
+	test_item->testResult = true;
+	for (unsigned int j = 0; j < rx_num * tx_num; j++) {
+		usdata.i =
+			(int16_t)frame_data[j * 2] + (((int16_t)frame_data[j * 2 + 1]) << 8);
+		if (signed_data)
+			usdata.i = *(int16_t *)&(usdata.s[0]);
+		if (test_item->hasUpperBond) {
+			if (usdata.i > upperBond) {
+				test_item->testResult = false;
+				test_item->fail_rx = (j % rx_num) + 1;
+				test_item->fail_tx = j/rx_num + 1;
+				test_item->fail_v = usdata.i;
+			} else {
+				test_item->testResult &= true;
+			}
+		}
+		if (test_item->hasLowerBond) {
+			if (usdata.i < lowerBond) {
+				test_item->testResult = false;
+				test_item->fail_rx = (j % rx_num) + 1;
+				test_item->fail_tx = j/rx_num + 1;
+				test_item->fail_v = usdata.i;
+			} else {
+				test_item->testResult &= true;
+			}
+		}
+	}
+
+	return test_item->testResult;
+}
+
+bool get_raw_data(uint8_t *frame_data, uint32_t frame_sz, uint16_t type,
+	bool signed_data, bool polling_for_ready, uint32_t self_test_id_sz,
+	uint8_t *full_data,	int rx_ic_num, int tx_ic_num, int rx_num, int tx_num,
+	bool rx_rev, bool tx_rev, int retry_limit, bool bPrintData, FILE *fp)
+{
+	int retry_cnt = 0;
+	int poll_cnt = 0;
+	int correct_frames = 0;
+	int ret;
+	union { uint32_t i; uint8_t b[4]; } cmd;
+	union { uint32_t i; uint8_t b[4]; } recv;
+	union { int32_t i; uint16_t s[2]; } usdata;
+	const uint32_t pollingInterval = 100;
+	const unsigned int header = 5;
+	int nDataRecv = 0;
+	uint8_t lastState;
+	int debug_start_loc;
+
+	for (unsigned int tra_rx_ic = 0; tra_rx_ic < rx_ic_num; tra_rx_ic++) {
+		for (unsigned int tra_tx_ic = 0; tra_tx_ic < tx_ic_num; tra_tx_ic++) {
+			retry_cnt = 0;
+RESTART_ALL_PROC:
+			if (tra_rx_ic != 0 || tra_tx_ic != 0) {
+				cmd.i = (tra_tx_ic << 20) | tra_rx_ic << 16 | type;
+				ret = hx_hid_set_feature(HID_TOUCH_MONITOR_SEL_ID, cmd.b, sizeof(cmd.b));
+				if (ret < 0) {
+					retry_cnt++;
+					if (retry_cnt >= retry_limit) {
+						hx_printf("Set feature failed!\n");
+						return false;
+					}
+					goto RESTART_ALL_PROC;
+				}
+				if (polling_for_ready) {
+					poll_cnt = 0;
+RESTART_POLL_PROC:
+					if (poll_cnt >= retry_limit) {
+						hx_printf("Polling for 0xFF timeout!\n");
+						return false;
+					}
+					nDataRecv = 0;
+					cmd.i = 0xFF;
+					cmd.i = htole32(cmd.i);
+					lastState = 0x0;
+					if (!pollingForResult(HID_SELF_TEST_ID, cmd.b, self_test_id_sz, pollingInterval, 7, recv.b, &nDataRecv)) {
+						if (nDataRecv == 0) {
+							hx_printf("polling result recv nothing.\n");
+							log(fp, "polling result recv nothing.\n");
+							poll_cnt++;
+							goto RESTART_POLL_PROC;
+						} else if (nDataRecv > 0) {
+							recv.i = le32toh(recv.i);
+							if ((recv.b[0] & 0xF0) == 0xF0) {
+								switch (recv.b[0]) {
+								case 0xF1:
+									if (lastState != recv.b[0]) {
+										hx_printf("[0x%02X] self test init stage.\n", recv.b[0]);
+										log(fp, "[0x%02X] self test init stage.\n", recv.b[0]);
+									}
+									break;
+								case 0xF2:
+									if (lastState != recv.b[0]) {
+										hx_printf("[0x%02X] self test started.\n", recv.b[0]);
+										log(fp, "[0x%02X] self test started.\n", recv.b[0]);
+									}
+									break;
+								case 0xF3:
+									if (lastState != recv.b[0]) {
+										hx_printf("[0x%02X] self test on going.\n", recv.b[0]);
+										log(fp, "[0x%02X] self test on going.\n", recv.b[0]);
+									}
+									break;
+								case 0xF4:
+									if (lastState != recv.b[0]) {
+										hx_printf("[0x%02X] Still load slave data.....\n", recv.b[0]);
+										log(fp, "[0x%02X] Still load slave data.....\n", recv.b[0]);
+									}
+									poll_cnt++;
+									goto RESTART_POLL_PROC;
+									break;
+								case 0xFF:
+									if (lastState != recv.b[0]) {
+										hx_printf("[0x%02X] process finish.\n", recv.b[0]);
+										log(fp, "[0x%02X] process finish.\n", recv.b[0]);
+									}
+									break;
+								default:
+									hx_printf("self test undefined stage.(0x%02X)\n", recv.b[0]);
+									log(fp, "self test undefined stage.(0x%02X)\n", recv.b[0]);
+								};
+								lastState = recv.b[0];
+								usleep(16 * 1000);
+								// continue;
+							} else if ((recv.b[0] & 0xF0) == 0xE0) {
+								switch (recv.b[0]) {
+								case 0xE1:
+									hx_printf("[0x%02X] self test not support!\n", recv.b[0]);
+									log(fp, "[0x%02X] self test not support!\n", recv.b[0]);
+									break;
+								case 0xEF:
+									hx_printf("[0x%02X] self test error!\n", recv.b[0]);
+									log(fp, "[0x%02X] self test error!\n", recv.b[0]);
+									break;
+								default:
+									hx_printf("self test undefined error(%02X)!\n", recv.b[0]);
+									log(fp, "self test undefined error(%02X)!\n", recv.b[0]);
+								};
+								return false;
+							} else {
+								hx_printf("self test return undefined value!(0x%02X)\n", recv.b[0]);
+								log(fp, "self test return undefined value!(0x%02X)\n", recv.b[0]);
+								return false;
+							}
+						}
+					} else {
+						//process completed
+						hx_printf("[0x%02X] process finish.\n", recv.b[0]);
+						log(fp, "[0x%02X] process finish.\n", recv.b[0]);
+						// break;
+					}
+				}
+			}
+			retry_cnt = 0;
+			while (retry_cnt++ < retry_limit) {
+				ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame_data, frame_sz);
+				if ((ret == 0) && (frame_data[1] == 0x5A) && (frame_data[2] == 0xA5)) {
+					correct_frames++;
+					if (bPrintData) {
+						hx_printf("       ");
+						for(int j = 0; j < rx_num; j++) {
+							hx_printf(" RX[%02d]", j + 1);
+							log(fp, " RX[%02d]", j + 1);
+						}
+						for (int j = 0; j < (rx_num * tx_num); j++) {
+							if ((j % rx_num) == 0) {
+								hx_printf("\nTX[%02d]:", j/rx_num + 1);
+								log(fp, "\nTX[%02d]:", j/rx_num + 1);
+							}
+							usdata.i =
+								(int16_t)frame_data[header + j * 2] + (((int16_t)frame_data[header + j * 2 + 1]) << 8);
+							if (signed_data)
+								usdata.i = *(int16_t *)&(usdata.s[0]);
+
+							hx_printf(" %6d", usdata.i);
+							log(fp, " %6d", usdata.i);
+						}
+
+						debug_start_loc = header + (rx_num * tx_num) * 2;
+						for (unsigned int j = 0; j < (rx_num + tx_num); j++) {
+							if ((j % rx_num) == 0) {
+								hx_printf("\n DEBUG:");
+								log(fp, "\n DEBUG:");
+							}
+							hx_printf(" %6d", ((int16_t)frame_data[debug_start_loc + j * 2]) + (((int16_t)frame_data[debug_start_loc + j * 2 + 1]) << 8));
+							log(fp, " %6d", ((int16_t)frame_data[debug_start_loc + j * 2]) + (((int16_t)frame_data[debug_start_loc + j * 2 + 1]) << 8));
+						}
+						hx_printf("\n");
+						log(fp, "\n");
+					}
+					if (place_frame_in_full_map((uint16_t *)full_data, (uint16_t *)(frame_data + header), rx_ic_num * rx_num,
+						tx_ic_num * tx_num, tra_rx_ic * rx_num, tra_tx_ic * tx_num, rx_num, tx_num) != 0) {
+						hx_printf("place frame in full map failed!\n");
+						log(fp, "place frame in full map failed!\n");
+						return false;
+					}
+					break;
+				}
+			}
+		}
+	}
+
+	if (correct_frames == rx_ic_num * tx_ic_num) {
+		if (rx_rev) {
+			uint16_t *tmp = (uint16_t *)malloc(rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			if (tmp == NULL) {
+				hx_printf("RX Reverse failed, Memory insufficient!\n");
+				return false;
+			}
+			for (int i = 0; i < tx_num * tx_ic_num; i++) {
+				for (int j = 0; j < rx_num * rx_ic_num; j++) {
+					tmp[i * rx_num * rx_ic_num + j] = ((uint16_t *)full_data)[(i + 1) * rx_num * rx_ic_num - j - 1];
+				}
+			}
+			memcpy(full_data, tmp, rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			free(tmp);
+		}
+		if (tx_rev) {
+			uint16_t *tmp = (uint16_t *)malloc(rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			if (tmp == NULL) {
+				hx_printf("TX Reverse failed, Memory insufficient!\n");
+				return false;
+			}
+			for (int i = 0; i < rx_num * rx_ic_num; i++) {
+				for (int j = 0; j < tx_num * tx_ic_num; j++) {
+					tmp[j * rx_num * rx_ic_num + i] = ((uint16_t *)full_data)[(tx_num * tx_ic_num - j - 1) * rx_num * rx_ic_num + i];
+				}
+			}
+			memcpy(full_data, tmp, rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			free(tmp);
+		}
+		return true;
+	} else {
+		return false;
+	}
+}
+
 int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 {
-	typedef struct hid_self_test_support_item {
-		const char *name;
-		bool hasLowerBond;
-		const char *lower_bond_keyword;
-		bool hasUpperBond;
-		const char *upper_bond_keyword;
-		uint32_t hid_switch;
-		bool testResult;
-		bool activated;
-		int32_t fail_rx;
-		int32_t fail_tx;
-		int32_t fail_v;
-	} hid_self_test_support_item_t;
 	static hid_self_test_support_item_t test_items[] = {
 		{
 			.name = "Short",
@@ -2288,7 +2627,6 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 		}
 	};
 	hx_hid_info info;
-	const unsigned int header = 5;
 	int ret = 0;
 	const uint32_t pollingInterval = 100;
 	hx_criteria_t *hx_criteria_table = NULL;
@@ -2299,27 +2637,29 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	int nDataRecv = 0;
 	const int retry_limit = 500;
 	int retry_cnt = 0;
-	int sz;
+	int total_sz;
+	int frame_sz;
 	bool bLowerBondFound;
 	int32_t *lowerBond_data;
 	bool bUpperBondFound;
 	int32_t *upperBond_data;
 	bool bSelfTestCompleted = false;
 	uint8_t lastState;
-	union { int32_t i; uint16_t s[2]; } usdata;
-	int debug_start_loc;
 	int rx_num;
 	int tx_num;
 	char fname_only[128] = {0};
 	char tmp_output_pathname[1024] = {0};
 	char final_output_pathname[1024] = {0};
-	bool is_output_file = (opt_data.options & OPTION_HID_CRITERIA_OUTPUT_PATH) == OPTION_HID_CRITERIA_OUTPUT_PATH;
+	bool is_output_file;
 	time_t t = time(NULL);
 	struct tm *dtime = localtime(&t);
 	struct timeval tv;
 	FILE *fp = NULL;
 	bool overall_result = true;
+	int tx_ic_num;
+	int rx_ic_num;
 
+	is_output_file = is_opt_set(&opt_data, OPTION_HID_CRITERIA_OUTPUT_PATH);
 	gettimeofday(&tv, NULL);
 	if (hx_hid_parse_criteria_file(opt_data, &hx_criteria_table, &nKeyword) == 0) {
 		if (hx_scan_open_hidraw(opt_data) == 0) {
@@ -2327,10 +2667,13 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
 					rx_num = info.rx;
 					tx_num = info.tx;
+					tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
+					rx_ic_num = (info.ic_num & 0x0F) + 1;
 
-					sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
-					if (sz > 0) {
-						frame = (uint8_t *)malloc(sz);
+					frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+					if (frame_sz > 0) {
+						total_sz = frame_sz + rx_num * tx_num * rx_ic_num * tx_ic_num * 2;
+						frame = (uint8_t *)malloc(total_sz);
 						if (frame == NULL) {
 							ret = -ENOMEM;
 							goto CRITERIA_NO_MEM_FAILED;
@@ -2360,7 +2703,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 								if (test_items[i].hasLowerBond) {
 									for (unsigned int j = 0; j < nKeyword; j++) {
 										if (strcmp(hx_criteria_table[j].keyword, test_items[i].lower_bond_keyword/*, strlen(test_items[i].lower_bond_keyword)*/) == 0) {
-											if (hx_criteria_table[j].activated && (hx_criteria_table[j].rx == rx_num) && (hx_criteria_table[j].tx == tx_num)) {
+											if (hx_criteria_table[j].activated && (hx_criteria_table[j].rx == (rx_num * rx_ic_num)) && (hx_criteria_table[j].tx == (tx_num * tx_ic_num))) {
 												bLowerBondFound = hx_criteria_table[j].activated;
 												if (bLowerBondFound)
 													lowerBond_data = hx_criteria_table[j].param_data;
@@ -2368,16 +2711,19 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 										}
 									}
 									if (!bLowerBondFound) {
-										hx_printf("%s: Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", test_items[i].name, rx_num, tx_num);
-										log(fp, "Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", rx_num, tx_num);
+										hx_printf("%s: Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n",
+											test_items[i].name, rx_num * rx_ic_num, tx_num * tx_ic_num);
+										log(fp, "Required Lower Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n",
+											rx_num * rx_ic_num, tx_num * tx_ic_num);
 										goto NEXT_ITEM;
 									}
 								}
 
 								if (test_items[i].hasUpperBond) {
 									for (unsigned int j = 0; j < nKeyword; j++) {
-										if (strcmp(hx_criteria_table[j].keyword, test_items[i].upper_bond_keyword/*, strlen(test_items[i].upper_bond_keyword)*/) == 0) {
-											if (hx_criteria_table[j].activated && (hx_criteria_table[j].rx == rx_num) && (hx_criteria_table[j].tx == tx_num)) {
+										if (strcmp(hx_criteria_table[j].keyword, test_items[i].upper_bond_keyword) == 0) {
+											if (hx_criteria_table[j].activated && (hx_criteria_table[j].rx == (rx_num * rx_ic_num))
+												&& (hx_criteria_table[j].tx == (tx_num * tx_ic_num))) {
 												bUpperBondFound = hx_criteria_table[j].activated;
 												if (bUpperBondFound)
 													upperBond_data = hx_criteria_table[j].param_data;
@@ -2385,8 +2731,10 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 										}
 									}
 									if (!bUpperBondFound) {
-										hx_printf("%s: Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", test_items[i].name, rx_num, tx_num);
-										log(fp, "Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n", rx_num, tx_num);
+										hx_printf("%s: Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n",
+											test_items[i].name, rx_num * rx_ic_num, tx_num * tx_ic_num);
+										log(fp, "Required Upper Bond not found or channel not match(require rx:%d, tx:%d). Ignore!\n",
+											rx_num * rx_ic_num, tx_num * tx_ic_num);
 										goto NEXT_ITEM;
 									}
 								}
@@ -2501,80 +2849,27 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 										goto NEXT_ITEM;
 									}
 
-									retry_cnt = 0;
-									while (retry_cnt++ < retry_limit) {
-										ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
-										if ((ret == 0) && (frame[1] == 0x5A) && (frame[2] == 0xA5)) {
-											test_items[i].testResult = true;
-											hx_printf("       ");
-											for(int j = 0; j < rx_num; j++) {
-												hx_printf(" RX[%02d]", j + 1);
-												log(fp, " RX[%02d]", j + 1);
-											}
-											for (int j = 0; j < (rx_num * tx_num); j++) {
-												if ((j % rx_num) == 0) {
-													hx_printf("\nTX[%02d]:", j/rx_num + 1);
-													log(fp, "\nTX[%02d]:", j/rx_num + 1);
-												}
-												usdata.i =
-													(int16_t)frame[header + j * 2] + (((int16_t)frame[header + j * 2 + 1]) << 8);
-												if (bSelfTestCompleted && (test_items[i].hid_switch == HID_SELF_TEST_NOISE))
-													usdata.i = *(int16_t *)&(usdata.s[0]);
-												if ((test_items[i].hasUpperBond) && bUpperBondFound) {
-													if (usdata.i > upperBond_data[j]) {
-														test_items[i].testResult = false;
-														test_items[i].fail_rx = (j % rx_num) + 1;
-														test_items[i].fail_tx = j/rx_num + 1;
-														test_items[i].fail_v = usdata.i;
-													} else
-														test_items[i].testResult &= true;
-												}
-												if ((test_items[i].hasLowerBond) && bLowerBondFound) {
-													if (usdata.i < lowerBond_data[j]) {
-														test_items[i].testResult = false;
-														test_items[i].fail_rx = (j % rx_num) + 1;
-														test_items[i].fail_tx = j/rx_num + 1;
-														test_items[i].fail_v = usdata.i;
-													} else
-														test_items[i].testResult &= true;
-												}
-												hx_printf(" %6d", (usdata.i));
-												log(fp, " %6d", (usdata.i));
-											}
-
-											debug_start_loc = header + (rx_num * tx_num) * 2;
-											for (unsigned int j = 0; j < (rx_num + tx_num); j++) {
-												if ((j % rx_num) == 0) {
-													hx_printf("\n DEBUG:");
-													log(fp, "\n DEBUG:");
-												}
-												hx_printf(" %6d", ((int16_t)frame[debug_start_loc + j * 2]) + (((int16_t)frame[debug_start_loc + j * 2 + 1]) << 8));
-												log(fp, " %6d", ((int16_t)frame[debug_start_loc + j * 2]) + (((int16_t)frame[debug_start_loc + j * 2 + 1]) << 8));
-											}
-											hx_printf("\n");
-											log(fp, "\n");
-											break;
-										} else {
-											/* hx_printf("header : %02X %02X %02X %02X %02X\nData:\n",
-												frame[0], frame[1], frame[2], frame[3], frame[4]); */
-											usleep(16 * 1000);
+									// hx_printf("Start to get raw data for compare....\n");
+									if (get_raw_data(frame, frame_sz, 0, test_items[i].hid_switch == HID_SELF_TEST_NOISE,
+										true, stSz,	frame + frame_sz, rx_ic_num, tx_ic_num, rx_num, tx_num,
+										is_opt_set(&opt_data, OPTION_HID_RX_REVERSE),
+										is_opt_set(&opt_data, OPTION_HID_TX_REVERSE),
+										retry_limit, true, fp)) {
+										compare_result(frame + frame_sz, &test_items[i], bUpperBondFound,
+											upperBond_data, bLowerBondFound, lowerBond_data, rx_num * rx_ic_num,
+											tx_num * tx_ic_num);
+										hx_printf("Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
+										log(fp, "Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
+										if (!test_items[i].testResult) {
+											hx_printf("(rx:%d, tx:%d) : %d\n",
+												test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
+											log(fp, "(rx:%d, tx:%d) : %d\n",
+												test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
 										}
-									};
-									if (bSelfTestCompleted) {
-										if (retry_cnt == retry_limit) {
-											hx_printf("Failed to get data for compare!\n");
-											log(fp, "Failed to get data for compare!\n");
-											goto NEXT_ITEM;
-										} else {
-											hx_printf("Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
-											log(fp, "Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
-											if (!test_items[i].testResult) {
-												hx_printf("(rx:%d, tx:%d) : %d\n",
-													test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
-												log(fp, "(rx:%d, tx:%d) : %d\n",
-													test_items[i].fail_rx, test_items[i].fail_tx, test_items[i].fail_v);
-											}
-										}
+									} else {
+										hx_printf("Failed to get data for compare!\n");
+										log(fp, "Failed to get data for compare!\n");
+										goto NEXT_ITEM;
 									}
 								} else {
 									hx_printf("Failed to issue self test command.\n");
@@ -2649,6 +2944,153 @@ CRITERIA_NO_MEM_FAILED:
 int hid_show_diag(OPTDATA& opt_data)
 {
 	hx_hid_info info;
+	int ret = 0;
+	bool bSelfTestCompleted = false;
+	const uint32_t pollingInterval = 100;
+	bool bTestPass = true;
+	uint8_t *frame = NULL;
+	uint8_t *cmd = NULL;
+	uint8_t *recv = NULL;
+	int nDataRecv;
+	const int retry_limit = 20;
+	int stSz = 0;
+	int frame_sz;
+	int total_sz;
+	int rx_num;
+	int tx_num;
+	int tx_ic_num;
+	int rx_ic_num;
+	bool signed_data = false;
+	hid_self_test_support_item_t test_item = {
+		.name = "Custom",
+		.hasLowerBond = true,
+		.hasUpperBond = true,
+		.testResult = false,
+		.activated = true,
+	};
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
+				rx_num = info.rx;
+				tx_num = info.tx;
+				tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
+				rx_ic_num = (info.ic_num & 0x0F) + 1;
+
+				frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+				if (frame_sz > 0) {
+					total_sz = frame_sz + rx_num * tx_num * rx_ic_num * tx_ic_num * 2;
+					frame = (uint8_t *)malloc(total_sz);
+					if (frame == NULL) {
+						ret = -ENOMEM;
+						goto DIAG_FUNC_END;
+					}
+					if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST)) {
+						int stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
+						if (stSz > 0) {
+							cmd = (uint8_t *)malloc(stSz);
+							if (cmd != NULL) {
+								cmd[0] = opt_data.param.i;
+								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+
+								if (ret == 0) {
+									recv = (uint8_t *)malloc(stSz);
+									if (recv == NULL) {
+										ret = -ENOMEM;
+										free(frame);
+										goto DIAG_FUNC_END;
+									}
+									nDataRecv = 0;
+									cmd[0] = 0xFF;
+POLL_AGAIN:
+									if (!pollingForResult(HID_SELF_TEST_ID, cmd, stSz, pollingInterval, 7,	recv, &nDataRecv)) {
+										if (nDataRecv == 0) {
+											goto POLL_AGAIN;
+										} else if (nDataRecv > 0) {
+											if ((recv[0] & 0xF0) == 0xF0) {
+												usleep(16 * 1000);
+												goto POLL_AGAIN;
+											}
+										}
+									} else {
+										bSelfTestCompleted = true;
+									}
+									free(recv);
+								}
+								free(cmd);
+							} else {
+								ret = -ENOMEM;
+								free(frame);
+								goto DIAG_FUNC_END;
+							}
+						} else {
+							ret = -ENODATA;
+							free(frame);
+							goto DIAG_FUNC_END;
+						}
+					}
+					if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST) && !bSelfTestCompleted) {
+						ret = -EIO;
+						free(frame);
+						goto DIAG_FUNC_END;
+					}
+
+					if ((bSelfTestCompleted && (opt_data.param.i == 0x22)) ||
+						is_opt_set(&opt_data, OPTION_HID_PARTIAL_DISPLAY_SIGNED))
+						signed_data = true;
+					if (get_raw_data(frame, frame_sz, opt_data.param.i, signed_data, false, stSz, frame + frame_sz,
+						rx_ic_num, tx_ic_num, rx_num, tx_num,
+						is_opt_set(&opt_data, OPTION_HID_RX_REVERSE), is_opt_set(&opt_data, OPTION_HID_TX_REVERSE),
+						retry_limit, true, NULL)) {
+						// bTestPass = compare_result(frame + frame_sz, &test_item, false, NULL, false, NULL, rx_num * rx_ic_num, tx_num * tx_ic_num);
+						bTestPass = compare_result_with_fixed_bounds(frame + frame_sz, &test_item, opt_data.self_test_spec_max, opt_data.self_test_spec_min, signed_data, rx_num * rx_ic_num, tx_num * tx_ic_num);
+					} else {
+						hx_printf("Failed to get data\n");
+					}
+
+					if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST)) {
+						if (bSelfTestCompleted) {
+							if (bTestPass) {
+								printf("Self test of 0x%02X PASS!\n", opt_data.param.i);
+							} else {
+								printf("Self test of 0x%02X Failed! (rx:%d, tx:%d) : %d\n",
+								opt_data.param.i, test_item.fail_rx , test_item.fail_tx, test_item.fail_v);
+							}
+						}
+
+						stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
+						if (stSz > 0) {
+							cmd = (uint8_t *)malloc(stSz);
+							if (cmd != NULL) {
+								cmd[0] = 0x01;
+								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+								free(cmd);
+							}
+						}
+					}
+
+					free(frame);
+				}
+			} else {
+				ret = -ENODATA;
+			}
+		} else {
+			hx_printf("ID parsing failed, return!\n");
+			ret = -ENODATA;
+		}
+	} else {
+		return -ENODEV;
+	}
+
+DIAG_FUNC_END:
+	hx_hid_close();
+
+	return ret;
+}
+
+int hid_show_specify_diag(OPTDATA& opt_data)
+{
+	hx_hid_info info;
 	const unsigned int header = 5;
 	int ret = 0;
 	bool bSelfTestCompleted = false;
@@ -2668,7 +3110,7 @@ int hid_show_diag(OPTDATA& opt_data)
 	union { int32_t i; uint16_t s[2]; } usdata;
 	int debug_start_loc;
 	int stSz;
-	int sz;
+	int frame_sz;
 	int rx_num;
 	int tx_num;
 
@@ -2678,14 +3120,14 @@ int hid_show_diag(OPTDATA& opt_data)
 				rx_num = info.rx;
 				tx_num = info.tx;
 
-				sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
-				if (sz > 0) {
-					frame = (uint8_t *)malloc(sz);
+				frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+				if (frame_sz > 0) {
+					frame = (uint8_t *)malloc(frame_sz);
 					if (frame == NULL) {
 						ret = -ENOMEM;
 						goto DIAG_FUNC_END;
 					}
-					if (opt_data.options & OPTION_HID_SELF_TEST) {
+					if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST)) {
 						int stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
 						if (stSz > 0) {
 							cmd = (uint8_t *)malloc(stSz);
@@ -2695,6 +3137,11 @@ int hid_show_diag(OPTDATA& opt_data)
 
 								if (ret == 0) {
 									recv = (uint8_t *)malloc(stSz);
+									if (recv == NULL) {
+										ret = -ENOMEM;
+										free(frame);
+										goto DIAG_FUNC_END;
+									}
 									nDataRecv = 0;
 									cmd[0] = 0xFF;
 POLL_AGAIN:
@@ -2713,17 +3160,26 @@ POLL_AGAIN:
 									free(recv);
 								}
 								free(cmd);
+							} else {
+								ret = -ENOMEM;
+								free(frame);
+								goto DIAG_FUNC_END;
 							}
+						} else {
+							ret = -ENODATA;
+							free(frame);
+							goto DIAG_FUNC_END;
 						}
 					}
-					if (((opt_data.options & OPTION_HID_SELF_TEST) > 0) && !bSelfTestCompleted) {
+					if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST) && !bSelfTestCompleted) {
 						ret = -EIO;
+						free(frame);
 						goto DIAG_FUNC_END;
 					}
 
 					retry_cnt = 0;
 					while (retry_cnt++ < retry_limit) {
-						ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
+						ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, frame_sz);
 						if (ret == 0) {
 							hx_printf("header : %02X %02X %02X %02X %02X\nData:\n",
 								frame[0], frame[1], frame[2], frame[3], frame[4]);
@@ -2740,7 +3196,7 @@ POLL_AGAIN:
 										(int16_t)frame[header + i * 2] + (((int16_t)frame[header + i * 2 + 1]) << 8);
 
 									if ((bSelfTestCompleted && (opt_data.param.i == 0x22)) ||
-										(opt_data.options & OPTION_HID_PARTIAL_DISPLAY_SIGNED) == OPTION_HID_PARTIAL_DISPLAY_SIGNED)
+										is_opt_set(&opt_data, OPTION_HID_PARTIAL_DISPLAY_SIGNED))
 										usdata.i = *(int16_t *)&(usdata.s[0]);
 									if ((usdata.i > opt_data.self_test_spec_max) ||
 										(usdata.i < opt_data.self_test_spec_min)) {
@@ -2768,7 +3224,7 @@ POLL_AGAIN:
 						}
 					}
 
-					if (opt_data.options & OPTION_HID_SELF_TEST) {
+					if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST)) {
 						if (bSelfTestCompleted) {
 							if (bTestPass) {
 								printf("Self test of 0x%02X PASS!\n", opt_data.param.i);
@@ -2967,7 +3423,7 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 	}
 	total_sz = ((int)info.rx * (int)info.tx + (int)info.rx + (int)info.tx) * 2;
 
-	if ((optdata.options & OPTION_HID_PARTIAL_SAVE_FILE) == OPTION_HID_PARTIAL_SAVE_FILE) {
+	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_SAVE_FILE)) {
 		save_fd = open(optdata.partial_save_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 		if (save_fd < 0) {
 			hx_printf("Open %s failed!\n", optdata.partial_save_file);
@@ -2983,8 +3439,7 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 		goto ALLOCATE_FAILED;
 	}
 
-	if ((optdata.options & OPTION_HID_PARTIAL_DISPLAY) == OPTION_HID_PARTIAL_DISPLAY || 
-		(optdata.options & OPTION_HID_PARTIAL_SAVE_FILE) == OPTION_HID_PARTIAL_SAVE_FILE) {
+	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_DISPLAY) || is_opt_set(&optdata, OPTION_HID_PARTIAL_SAVE_FILE)) {
 		buffer = (char *)malloc(((partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1);
 
 		if (buffer == NULL) {
@@ -2995,9 +3450,8 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 		stringLen = ((partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1;
 	}
 
-	if ((optdata.options & OPTION_HID_PARTIAL_DISPLAY) == OPTION_HID_PARTIAL_DISPLAY) {
+	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_DISPLAY))
 		display_data = true;
-	}
 
 	full_cycle = total_sz / ((partial_data_sz - 1) / 2 - 2);
 	if ((total_sz % ((partial_data_sz - 1) / 2 - 2)) > 0)
@@ -3131,7 +3585,6 @@ int hid_snr_calculation(OPTDATA& opt_data)
 	hx_hid_info info;
 	int rx_num;
 	int tx_num;
-	int sz;
 	int mutual_sz;
 	uint8_t *frame = NULL;
 	float *base_frame = NULL;
@@ -3156,8 +3609,13 @@ int hid_snr_calculation(OPTDATA& opt_data)
 	float max_avg_snr;
 	float avg_snr;
 	bool collected;
+	int32_t tx_ic_num;
+	int32_t rx_ic_num;
+	int total_sz;
+	int frame_sz;
+	int stSz;
+	bool bret;
 	struct pv_t *pv;
-	const unsigned int header = 5;
 	const int32_t retry_limit = 10;
 	union {
 		uint32_t i;
@@ -3185,23 +3643,32 @@ int hid_snr_calculation(OPTDATA& opt_data)
 		goto SETUP_FAILED;
 	}
 
+	stSz = hx_hid_get_size_by_id(HID_SELF_TEST_ID);
+	if (stSz <= 0) {
+		hx_printf("No HID_SELF_TEST_ID in RD!\n");
+		ret = -EFAULT;
+		goto SETUP_FAILED;
+	}
+
 	if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) != 0) {
 		hx_printf("Get HID_CFG_ID failed!\n");
 		ret = -EFAULT;
 		goto SETUP_FAILED;
 	}
 
+	tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
+	rx_ic_num = (info.ic_num & 0x0F) + 1;
 	rx_num = info.rx;
 	tx_num = info.tx;
-	mutual_sz = rx_num * tx_num;
+	mutual_sz = rx_num * tx_num * rx_ic_num * tx_ic_num;
 	if (mutual_sz <= 0) {
 		hx_printf("Mutual size is incorrect!\n");
 		ret = -EFAULT;
 		goto SETUP_FAILED;
 	}
 
-	sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
-	if (sz <= 0) {
+	frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
+	if (frame_sz <= 0) {
 		hx_printf("Size of HID_TOUCH_MONITOR_ID is incorrect!\n");
 		ret = -EFAULT;
 		goto SETUP_FAILED;
@@ -3241,7 +3708,8 @@ int hid_snr_calculation(OPTDATA& opt_data)
 		goto FORCE_ACTIVE_FAILED;
 	}
 
-	frame = (uint8_t *)malloc(sz);
+	total_sz = frame_sz + rx_num * tx_num * rx_ic_num * tx_ic_num * 2;
+	frame = (uint8_t *)malloc(total_sz);
 	if (frame == NULL) {
 		hx_printf("Allocate memory for frame failed!\n");
 		ret = -ENOMEM;
@@ -3287,70 +3755,66 @@ int hid_snr_calculation(OPTDATA& opt_data)
 			hx_printf("Get base frame failed!\n");
 			break;
 		}
-		ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
-		if (ret == 0) {
-			if ((frame[1] == 0x5A) && (frame[2] == 0xA5)) {
-				retry_cnt = 0;
-				if (n_frames == (opt_data.snr_base_frames + opt_data.snr_ignore_frames + opt_data.snr_signal_noise_frames)) {
-					for (int i = 0; i < mutual_sz; i++) {
-						statistic_frames[un_touched_sd_frame * mutual_sz + i] = 
-							statistic_frames[un_touched_sd_frame * mutual_sz + i] / opt_data.snr_signal_noise_frames;
-					}
-					hx_printf("Base frame calculated, un-touched statistic calculated, total get %d frames and ignore %d frames\n",
-						n_frames, opt_data.snr_ignore_frames);
-					hx_printf("Base frame:\n");
-					print_data(opt_data, base_frame, rx_num, tx_num, true);
-					hx_printf("Un-touched statistic:\n");
-					hx_printf("SD frame:\n");
-					frame_sqrt(&statistic_frames[un_touched_sd_frame * mutual_sz],
-						f_tmp_frame, mutual_sz);
-					print_data(opt_data, f_tmp_frame, rx_num, tx_num);
 
-					untouched_sd_avg = frame_avg(f_tmp_frame, rx_num, tx_num);
-					untouched_sd_avg_max = frame_max(f_tmp_frame, rx_num, tx_num)->v;
-					hx_printf("Un-touched Standard Deviation Noise AVG: %f, "
-						"Standard Deviation Noise MAX: %f\n",
-						untouched_sd_avg, untouched_sd_avg_max);
-
-					hx_printf("Un-touched Average of Max Noise: %f, Max noise: %d\n", untouched_sd_max_avg, untouched_sd_max);
-
-					collected = true;
-					break;
-				} else if (n_frames >= (opt_data.snr_ignore_frames + opt_data.snr_base_frames)) {
-					uint16_t *tmp_frame = (uint16_t *)(frame + header);
-					float tmp;
-					float max = -1000;
-					if (n_frames == (opt_data.snr_ignore_frames + opt_data.snr_base_frames)) {
-						for (int i = 0; i < mutual_sz; i++) {
-							base_frame[i] = base_frame[i] / (float)opt_data.snr_base_frames;
-						}
-					}
-					// calculate Standard Deviation
-					for (int i = 0; i < mutual_sz; i++) {
-						tmp = (float)tmp_frame[i] - base_frame[i];
-						if (tmp > max)
-							max = tmp;
-						if (tmp > untouched_sd_max)
-							untouched_sd_max = tmp;
-						tmp *= tmp;
-						statistic_frames[un_touched_sd_frame * mutual_sz + i] += tmp;
-					}
-					untouched_sd_max_avg += max;
-				} else if (n_frames >= (opt_data.snr_ignore_frames)) {
-					uint16_t *tmp_frame = (uint16_t *)(frame + header);
-					for (int i = 0; i < mutual_sz; i++) {
-						base_frame[i] += tmp_frame[i];
-					}
-				}
-				n_frames++;
-			} else {
-				usleep(16 * 1000);
-				retry_cnt++;
-			}
-		} else {
+		bret = get_raw_data(frame, frame_sz, HID_DIAG_RAW_DATA, true, false, stSz, frame + frame_sz, rx_ic_num, tx_ic_num, rx_num, tx_num,
+			is_opt_set(&opt_data, OPTION_HID_RX_REVERSE),
+			is_opt_set(&opt_data, OPTION_HID_TX_REVERSE), retry_limit, true, NULL);
+		if (!bret) {
 			hx_printf("Get frame failed!\n");
 			goto GET_BASE_FAILED;
 		}
+		if (n_frames == (opt_data.snr_base_frames + opt_data.snr_ignore_frames + opt_data.snr_signal_noise_frames)) {
+			for (int i = 0; i < mutual_sz; i++) {
+				statistic_frames[un_touched_sd_frame * mutual_sz + i] = 
+					statistic_frames[un_touched_sd_frame * mutual_sz + i] / opt_data.snr_signal_noise_frames;
+			}
+			hx_printf("Base frame calculated, un-touched statistic calculated, total get %d frames and ignore %d frames\n",
+				n_frames, opt_data.snr_ignore_frames);
+			hx_printf("Base frame:\n");
+			print_data(opt_data, base_frame, rx_num, tx_num, true);
+			hx_printf("Un-touched statistic:\n");
+			hx_printf("SD frame:\n");
+			frame_sqrt(&statistic_frames[un_touched_sd_frame * mutual_sz],
+				f_tmp_frame, mutual_sz);
+			print_data(opt_data, f_tmp_frame, rx_num, tx_num);
+
+			untouched_sd_avg = frame_avg(f_tmp_frame, rx_num, tx_num);
+			untouched_sd_avg_max = frame_max(f_tmp_frame, rx_num, tx_num)->v;
+			hx_printf("Un-touched Standard Deviation Noise AVG: %f, "
+				"Standard Deviation Noise MAX: %f\n",
+				untouched_sd_avg, untouched_sd_avg_max);
+
+			hx_printf("Un-touched Average of Max Noise: %f, Max noise: %d\n", untouched_sd_max_avg, untouched_sd_max);
+
+			collected = true;
+			break;
+		} else if (n_frames >= (opt_data.snr_ignore_frames + opt_data.snr_base_frames)) {
+			uint16_t *tmp_frame = (uint16_t *)(frame + frame_sz);
+			float tmp;
+			float max = -1000;
+			if (n_frames == (opt_data.snr_ignore_frames + opt_data.snr_base_frames)) {
+				for (int i = 0; i < mutual_sz; i++) {
+					base_frame[i] = base_frame[i] / (float)opt_data.snr_base_frames;
+				}
+			}
+			// calculate Standard Deviation
+			for (int i = 0; i < mutual_sz; i++) {
+				tmp = (float)tmp_frame[i] - base_frame[i];
+				if (tmp > max)
+					max = tmp;
+				if (tmp > untouched_sd_max)
+					untouched_sd_max = tmp;
+				tmp *= tmp;
+				statistic_frames[un_touched_sd_frame * mutual_sz + i] += tmp;
+			}
+			untouched_sd_max_avg += max;
+		} else if (n_frames >= (opt_data.snr_ignore_frames)) {
+			uint16_t *tmp_frame = (uint16_t *)(frame + frame_sz);
+			for (int i = 0; i < mutual_sz; i++) {
+				base_frame[i] += tmp_frame[i];
+			}
+		}
+		n_frames++;
 	}
 	if (collected) {
 		hx_printf("Start SNR test, please put the finger at desire position on panel and keep the position.\n");
@@ -3365,43 +3829,40 @@ int hid_snr_calculation(OPTDATA& opt_data)
 				hx_printf("Get base frame failed!\n");
 				break;
 			}
-			ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame, sz);
-			if (ret == 0) {
-				if ((frame[1] == 0x5A) && (frame[2] == 0xA5)) {
-					retry_cnt = 0;
-					if (n_frames == (opt_data.snr_signal_noise_frames + opt_data.snr_ignore_frames)) {
-						hx_printf("Touched frames collected, total get %d frames and ignore %d frames\n",
-							n_frames, opt_data.snr_ignore_frames);
-						collected = true;
-						break;
-					} else if (n_frames >= (opt_data.snr_ignore_frames)) {
-						uint16_t *tmp_frame;
-						float tmp;
-						for (int i = 0; i < mutual_sz; i++) {
-							tmp_frame = (uint16_t *)(frame + header);
-							tmp = tmp_frame[i];
-							tmp = tmp - base_frame[i];
 
-							// if (tmp < opt_data.snr_touch_threshold) {
-							// 	tmp = 0;
-							// }
-
-							signal_frames[sig_idx * mutual_sz + i] = tmp;
-							signal_average_frame[i] += signal_frames[sig_idx * mutual_sz + i];
-							// signal_average_frame[i] += fabs(signal_frames[sig_idx * mutual_sz + i]);
-						}
-						// print_data(opt_data, &(signal_frames[sig_idx * mutual_sz]), rx_num, tx_num);
-						sig_idx++;
-					}
-					n_frames++;
-				} else {
-					usleep(16 * 1000);
-					retry_cnt++;
-				}
-			} else {
+			bret = get_raw_data(frame, frame_sz, HID_DIAG_RAW_DATA, true, false, stSz, frame + frame_sz,
+				rx_ic_num, tx_ic_num, rx_num, tx_num,
+				is_opt_set(&opt_data, OPTION_HID_RX_REVERSE), is_opt_set(&opt_data, OPTION_HID_TX_REVERSE),
+				retry_limit, true, NULL);
+			if (!bret) {
 				hx_printf("Get frame failed!\n");
 				goto GET_BASE_FAILED;
 			}
+			if (n_frames == (opt_data.snr_signal_noise_frames + opt_data.snr_ignore_frames)) {
+				hx_printf("Touched frames collected, total get %d frames and ignore %d frames\n",
+					n_frames, opt_data.snr_ignore_frames);
+				collected = true;
+				break;
+			} else if (n_frames >= (opt_data.snr_ignore_frames)) {
+				uint16_t *tmp_frame;
+				float tmp;
+				for (int i = 0; i < mutual_sz; i++) {
+					tmp_frame = (uint16_t *)(frame + frame_sz);
+					tmp = tmp_frame[i];
+					tmp = tmp - base_frame[i];
+
+					// if (tmp < opt_data.snr_touch_threshold) {
+					// 	tmp = 0;
+					// }
+
+					signal_frames[sig_idx * mutual_sz + i] = tmp;
+					signal_average_frame[i] += signal_frames[sig_idx * mutual_sz + i];
+					// signal_average_frame[i] += fabs(signal_frames[sig_idx * mutual_sz + i]);
+				}
+				// print_data(opt_data, &(signal_frames[sig_idx * mutual_sz]), rx_num, tx_num);
+				sig_idx++;
+			}
+			n_frames++;
 		}
 		for (int i = 0; i < mutual_sz; i++) {
 			signal_average_frame[i] = signal_average_frame[i] / sig_idx;

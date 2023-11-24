@@ -30,9 +30,9 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.2.8"
+#define HX_UTIL_VER "V1.2.9"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:n:f"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:n:fJ:xy"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -59,6 +59,7 @@ static struct option long_option[] = {
 	{"hid-write-reg", 1, NULL, 'W'},
 	{"hid-set-data-type", 1, NULL, 'S'},
 	{"hid-show-diag", 0, NULL, 'D'},
+	{"hid-show-specify-diag", 1, NULL, 'J'},
 	{"hid-self-test", 1, NULL, 'T'},
 	{"hid-self-test-max", 1, NULL, 'M'},
 	{"hid-self-test-min", 1, NULL, 'N'},
@@ -80,11 +81,23 @@ static struct option long_option[] = {
 	{"hid-show-version", 0, NULL, 'f'},
 
 	{"hid-criteria-log-path", 1, NULL, 'o'},
+
+	{"hid-data-rx-reverse", 0, NULL, 'x'},
+	{"hid-data-tx-reverse", 0, NULL, 'y'},
+
 	{0, 0, 0, 0},
 };
 
 int g_show_dbg_log = 0;
 bool is_partial_en = false;
+
+bool is_opt_set(OPTDATA *opt_data, uint32_t option)
+{
+	if(option < (1UL << mutual_shift_bit))
+		return IS_OR_OPTION_SET(opt_data->options, option);
+	else
+		return IS_MUTUAL_OPTION_SET(opt_data->options, option);
+}
 
 void print_version()
 {
@@ -120,6 +133,7 @@ void print_help(const char *prog_name)
 	printf("\t-W, --hid-write-reg\tWrite 4 bytes to IC reg using HID. 1st 4 bytes address(0xHHHHHHHH), 2nd 4 bytes data(0xHHHHHHHH)\n");
 	printf("\t-S, --hid-set-data-type\tUse with -D, set data type for -D.\n");
 	printf("\t-D, --hid-show-diag\tShow touch data using HID. Ex \"-S type -D\" or \"-D\"\n");
+	printf("\t-J, --hid-show-specify-diag\tShow specify IC touch data using HID. Specify IC by 0xNM, N is ic count in RX direction; M is IC count in TX direction. Ex \"-S type -J 0xNM(\"\n");
 	printf("\t-T, --hid-self-test\tRun self test when show data by DIAG, combined with -D using HID.\n");
 	printf("\t-M, --hid-self-test-max\tUse with -T for single test type's upperbond.\n");
 	printf("\t-N, --hid-self-test-min\tUse with -T for single test type's lowerbond.\n");
@@ -139,6 +153,9 @@ void print_help(const char *prog_name)
 	printf("\t-n, --hid-snr-calculation\tCalculate SNR, parameter 1st is ignore frame count, 2nd is base frame count, 3rd is noise/signal frame count, 4th is touch threshold\n");
 
 	printf("\t-f, --hid-show-version\tShow HID version.\n");
+
+	printf("\t-x, --hid-data-rx-reverse\tReverse RX data.\n");
+	printf("\t-y, --hid-data-tx-reverse\tReverse TX data.\n");
 
 	printf("\t-o, --hid-criteria-log-path\tSet criteria log path.\n");
 }
@@ -301,6 +318,14 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 		case 'D':
 			optp->options = OPTION_HID_SHOW_DIAG | (optp->options & OPTION_NONE);
 			break;
+		case 'J':
+			if (sscanf(optarg, "0x%hX", &(optp->ic_select)) == EOF) {
+				optp->ic_select = 0;
+				hx_printf("parsing IC select error!\n");
+				break;
+			}
+			optp->options = OPTION_HID_SHOW_SPECIFY_DIAG | (optp->options & OPTION_NONE);
+			break;
 		case 'T':
 			if (sscanf(optarg, "0x%X", &(optp->param.i)) == EOF) {
 				optp->param.i = 0;
@@ -413,16 +438,22 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 				optp->snr_ignore_frames, optp->snr_base_frames, optp->snr_signal_noise_frames, optp->snr_touch_threshold);
 			optp->options = OPTION_HID_SNR_CALCULATE | (optp->options & OPTION_NONE);
 			break;
+		case 'x':
+			optp->options |= OPTION_HID_RX_REVERSE;
+			break;
+		case 'y':
+			optp->options |= OPTION_HID_TX_REVERSE;
+			break;
 		default:
 			break;
 		}
 	}
 
-	if ((optp->options & OPTION_HID_SELF_TEST) == OPTION_HID_SELF_TEST) {
-		if ((optp->options & OPTION_HID_SELF_TEST_UPPER_BOUND) == 0) {
+	if (is_opt_set(optp, OPTION_HID_SELF_TEST)) {
+		if (!is_opt_set(optp, OPTION_HID_SELF_TEST_UPPER_BOUND)) {
 			optp->self_test_spec_max = 65535;
 		}
-		if ((optp->options & OPTION_HID_SELF_TEST_LOWER_BOUND) == 0) {
+		if (!is_opt_set(optp, OPTION_HID_SELF_TEST_LOWER_BOUND)) {
 			optp->self_test_spec_min = -65535;
 		}
 	}
@@ -467,75 +498,81 @@ int main(int argc, char *argv[])
 
 	time_s = get_current_ms();
 
-	if (!(opt_data.options & info_option) && !(opt_data.options & info_hid_option))
+	if (!is_opt_set(&opt_data, info_option) && !is_opt_set(&opt_data, info_hid_option))
 		print_version();
 
-	if (opt_data.options & info_option) {
+	if (is_opt_set(&opt_data, info_option)) {
 		ret = show_info(&dev_info, &opt_data);
 		if (ret != 0) {
 			goto MAIN_END;
 		}
 	}
 
-	if (opt_data.options & OPTION_HID_SET_DATA_TYPE) {
+	if (is_opt_set(&opt_data, OPTION_HID_SET_DATA_TYPE)) {
 		ret = hid_set_data_type(opt_data);
 		if (ret < 0) {
 			goto MAIN_END;
 		}
 	}
 
-	if (opt_data.options & OPTION_HID_SHOW_REPORT) {
+	if (is_opt_set(&opt_data, OPTION_HID_SHOW_REPORT)) {
 		ret = hid_print_report_descriptor(opt_data);
 		if (ret < 0) {
 			goto MAIN_END;
 		}
 	}
 
-	if (opt_data.options & OPTION_HID_SET_TOUCH_INPUT_RD_EN) {
+	if (is_opt_set(&opt_data, OPTION_HID_SET_TOUCH_INPUT_RD_EN)) {
 		ret = hid_set_input_RD_en(opt_data, dev_info);
 		if (ret < 0) {
 			goto MAIN_END;
 		}
 	}
 
-	if (opt_data.options & OPTION_HID_SHOW_VERSION) {
+	if (is_opt_set(&opt_data, OPTION_HID_SHOW_VERSION)) {
 		ret = hid_show_version(opt_data);
 		if (ret < 0) {
 			goto MAIN_END;
 		}
 	}
 
-	if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_UPDATE)
+	if (is_opt_set(&opt_data, OPTION_UPDATE))
 		ret = burn_firmware(&dev_info, &opt_data);
-	else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SELF_TEST_CRITERIA_FILE) {
+	else if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST_CRITERIA_FILE))
 		ret = hid_self_test_by_criteria_file(opt_data);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_READ_REG) {
+	else if (is_opt_set(&opt_data, OPTION_READ_REG))
 		ret = read_reg(opt_data);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_WRITE_REG) {
+	else if (is_opt_set(&opt_data, OPTION_WRITE_REG))
 		ret = write_reg(opt_data);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_STATUS)
+	else if (is_opt_set(&opt_data, OPTION_STATUS))
 		ret = show_status(&opt_data);
-	else if (((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_INFO) ||
-			((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SHOW_PID_BY_HID_INFO) ||
-			((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SHOW_FW_VER_BY_HID_INFO)) {
+	else if (is_opt_set(&opt_data, OPTION_HID_INFO) ||
+			is_opt_set(&opt_data, OPTION_HID_SHOW_PID_BY_HID_INFO) ||
+			is_opt_set(&opt_data, OPTION_HID_SHOW_FW_VER_BY_HID_INFO))
 		ret = hid_show_fw_info(opt_data);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_WRITE_REG) {
+	else if (is_opt_set(&opt_data, OPTION_HID_WRITE_REG))
 		ret = hid_write_reg(opt_data);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_READ_REG) {
+	else if (is_opt_set(&opt_data, OPTION_HID_READ_REG))
 		ret = hid_read_reg(opt_data);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_SHOW_DIAG) {
+	else if (is_opt_set(&opt_data, OPTION_HID_SHOW_DIAG)) {
 		ret = hid_show_diag(opt_data);
-		if (opt_data.options & OPTION_HID_SET_DATA_TYPE) {
+		if (is_opt_set(&opt_data, OPTION_HID_SET_DATA_TYPE)) {
 			opt_data.param.i = HID_DIAG_NORAML_DATA;
 			ret |= hid_set_data_type(opt_data);
 		}
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_MAIN_UPDATE) {
+	} else if (is_opt_set(&opt_data, OPTION_HID_SHOW_SPECIFY_DIAG)) {
+		ret = hid_show_specify_diag(opt_data);
+		if (is_opt_set(&opt_data, OPTION_HID_SET_DATA_TYPE)) {
+			opt_data.param.i = HID_DIAG_NORAML_DATA;
+			ret |= hid_set_data_type(opt_data);
+		}
+	} else if (is_opt_set(&opt_data, OPTION_HID_MAIN_UPDATE)) {
 		int errorCode = 0;
 		ret = hid_main_update(opt_data, dev_info, errorCode);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_BL_UPDATE) {
+	} else if (is_opt_set(&opt_data, OPTION_HID_BL_UPDATE)) {
 		int errorCode = 0;
 		ret = hid_bl_update(opt_data, dev_info, errorCode);
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_ALL_UPDATE) {
+	} else if (is_opt_set(&opt_data, OPTION_HID_ALL_UPDATE)) {
 		int errorCode = 0;
 		ret = hid_main_update(opt_data, dev_info, errorCode);
 		if (ret == 0) {
@@ -548,18 +585,18 @@ int main(int argc, char *argv[])
 		} else {
 			printf("hid_main_update no go, errorCode = %d\n", ret);
 		}
-	} else if ((opt_data.options & OPTION_MUTUAL_FILTER) == OPTION_HID_PARTIAL_EN_POLLING_RATE) {
+	} else if (is_opt_set(&opt_data, OPTION_HID_PARTIAL_EN_POLLING_RATE)) {
 		is_partial_en = true;
 		signal(SIGINT, handleCtrlC);
 		ret = hid_polling_partial_data(opt_data, is_partial_en);
-	} else if ((opt_data.options & OPTION_HID_SNR_CALCULATE) == OPTION_HID_SNR_CALCULATE) {
+	} else if (is_opt_set(&opt_data, OPTION_HID_SNR_CALCULATE)) {
 		ret = hid_snr_calculation(opt_data);
 	}
 
-	if (opt_data.options & OPTION_REBIND) {
-		if (opt_data.options & OPTION_HID_SET_TOUCH_INPUT_RD_EN) {
+	if (is_opt_set(&opt_data, OPTION_REBIND)) {
+		if (is_opt_set(&opt_data, OPTION_HID_SET_TOUCH_INPUT_RD_EN))
 			hid_set_input_RD_en(opt_data, dev_info);
-		}
+
 		if (hid_update_DEVINFO(dev_info) != 0) {
 			printf("Failed to get device info!\n");
 			return -ENODEV;
