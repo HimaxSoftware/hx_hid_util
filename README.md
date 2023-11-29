@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Pen resolution and LTDI_IC_NUM info in INFO struct.
 - Single IC raw data acquisition option -J.
 - RX reverse -x and TX reverse option -y.
+- Himax IC check option -z.
 ### Changed
 - Extend all raw data acquisition method to LTDI batch read if IC is LTDI.
 - Refactor all option check statement to is_opt_set function.

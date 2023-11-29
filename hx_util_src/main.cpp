@@ -32,7 +32,7 @@
 #define HX_UTIL_NAME "Himax Update Utility"
 #define HX_UTIL_VER "V1.2.9"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:n:fJ:xy"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:n:fJ:xyz"
 
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
@@ -84,6 +84,8 @@ static struct option long_option[] = {
 
 	{"hid-data-rx-reverse", 0, NULL, 'x'},
 	{"hid-data-tx-reverse", 0, NULL, 'y'},
+
+	{"hid-himax-identify", 0, NULL, 'z'},
 
 	{0, 0, 0, 0},
 };
@@ -156,6 +158,7 @@ void print_help(const char *prog_name)
 
 	printf("\t-x, --hid-data-rx-reverse\tReverse RX data.\n");
 	printf("\t-y, --hid-data-tx-reverse\tReverse TX data.\n");
+	printf("\t-z, --hid-himax-identify\tIdentify IC is Himax or not.\n");
 
 	printf("\t-o, --hid-criteria-log-path\tSet criteria log path.\n");
 }
@@ -444,6 +447,9 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 		case 'y':
 			optp->options |= OPTION_HID_TX_REVERSE;
 			break;
+		case 'z':
+			optp->options = OPTION_HID_HIMAX_IDENT | (optp->options & OPTION_NONE);
+			break;
 		default:
 			break;
 		}
@@ -591,6 +597,8 @@ int main(int argc, char *argv[])
 		ret = hid_polling_partial_data(opt_data, is_partial_en);
 	} else if (is_opt_set(&opt_data, OPTION_HID_SNR_CALCULATE)) {
 		ret = hid_snr_calculation(opt_data);
+	} else if (is_opt_set(&opt_data, OPTION_HID_HIMAX_IDENT)) {
+		ret = hid_himax_identify(opt_data);
 	}
 
 	if (is_opt_set(&opt_data, OPTION_REBIND)) {

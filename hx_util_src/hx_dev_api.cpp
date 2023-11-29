@@ -3985,3 +3985,50 @@ SETUP_FAILED:
 
 	return ret;
 }
+
+int hid_himax_identify(OPTDATA& opt_data)
+{
+	const char hx_identy[] = "HXHIDI2C";
+	int ret;
+	int id_sz;
+	uint8_t temp[12] = {0};
+
+	if (hx_scan_open_hidraw(opt_data) == 0) {
+		if (hx_hid_parse_RD_for_idsz() == 0) {
+			id_sz = hx_hid_get_size_by_id(HID_HIMAX_IDENT_ID);
+			if (id_sz > 0)
+				ret = hx_hid_get_feature(HID_HIMAX_IDENT_ID, temp, id_sz);
+			else {
+				printf("No 0x%02X in RD!\n", HID_HIMAX_IDENT_ID);
+				ret = -ENOENT;
+				goto SETUP_FAILED;
+			}
+
+			if (ret < 0) {
+				printf("Get 0x%02X failed!\n", HID_HIMAX_IDENT_ID);
+				ret = -EFAULT;
+				goto SETUP_FAILED;
+			}
+			hx_printf("Read back : ");
+			for (int i = 0; i < id_sz; i++) {
+				hx_printf("%c ", temp[i]);
+			}
+			hx_printf("\n");
+			if (memcmp(temp, hx_identy, id_sz) == 0) {
+				printf("Himax device found!\n");
+				ret = 0;
+			} else {
+				printf("Himax device not found!\n");
+				ret = -ENODEV;
+			}
+		} else {
+			ret = -ENOENT;
+		}
+SETUP_FAILED:
+		hx_hid_close();
+		return ret;
+	} else {
+		printf("No Himax device found!\n");
+		return -ENODEV;
+	}
+}

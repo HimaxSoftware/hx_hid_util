@@ -70,6 +70,7 @@ enum mutual_option {
 	OPTION_HID_PARTIAL_EN_POLLING_RATE = (1 + 14) << mutual_shift_bit,
 	OPTION_HID_SNR_CALCULATE = (1 + 15) << mutual_shift_bit,
 	OPTION_HID_SHOW_SPECIFY_DIAG = (1 + 16) << mutual_shift_bit,
+	OPTION_HID_HIMAX_IDENT = (1 + 17) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
@@ -82,6 +83,7 @@ enum mutual_option {
 #define HID_FW_UPDATE_HANDSHAKING_ID	(0x0B)
 #define HID_SELF_TEST_ID				(0x0C)
 #define HID_INPUT_RD_EN_ID				(0x31)
+#define HID_HIMAX_IDENT_ID				(0xAA)
 
 #define HID_SELF_TEST_SHORT			(0x11)
 #define HID_SELF_TEST_OPEN			(0x12)
