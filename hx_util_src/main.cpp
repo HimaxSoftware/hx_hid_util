@@ -535,6 +535,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
+
 	if (is_opt_set(&opt_data, OPTION_HID_SHOW_VERSION)) {
 		ret = hid_show_version(opt_data);
 		if (ret < 0) {
