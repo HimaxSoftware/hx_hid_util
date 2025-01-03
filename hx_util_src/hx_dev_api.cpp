@@ -3362,7 +3362,7 @@ int hid_update_DEVINFO(DEVINFO& oinfo)
 			}
 			/* hx_printf("hidraw info, bus type : %d, vendor : 0x%04X, product : 0x%04X\n", \
 			 *	dinfo.bustype, dinfo.vendor, dinfo.product); */
-			if (dinfo.vendor == 0x4858) {
+			if (dinfo.vendor == 0x4858 || dinfo.vendor == 0x3558) {
 				found = 1;
 				break;
 			} else {

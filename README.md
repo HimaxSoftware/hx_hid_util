@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Refactor all option check statement to is_opt_set function.
 - Disable/Enable HID input after re-flash FW if -e specified.
 - Wording in README.md, remove unnecessary "Add" in Added section.
+- Added another applicable VID(0x3558) of Himax.
 ## [1.2.5] - 2023-08-16
 ### Added
 - Self test log output to specified folder after each test.

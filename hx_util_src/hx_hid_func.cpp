@@ -65,7 +65,7 @@ int hx_scan_open_hidraw(OPTDATA& optdata)
 
 		if (access(hidraw_path, F_OK) != 0) {
 			hx_printf("f%s device node not exist!\n", hidraw_path);
-			
+
 			break;
 		}
 
@@ -85,7 +85,7 @@ int hx_scan_open_hidraw(OPTDATA& optdata)
 		}
 		/* hx_printf("hidraw info, bus type : %d, vendor : 0x%04X, product : 0x%04X\n", \
 		 *	dinfo.bustype, dinfo.vendor, dinfo.product); */
-		if (dinfo.vendor == 0x4858) {
+		if (dinfo.vendor == 0x4858 || dinfo.vendor == 0x3558) {
 			found = 1;
 			// *hidpath = hidraw_path;
 			// *hidfd = fd;
