@@ -468,7 +468,7 @@ int hx_hid_parse_RD_for_idsz(void)
 	int16_t current_desc_size = -1; 
 	uint8_t current_desc[255] = {0};
 	uint32_t current_value;
-	uint32_t current_usage_page = 0;
+	// uint32_t current_usage_page = 0;
 	int c_id = -1;
 	int32_t c_size = -1;
 	
@@ -489,7 +489,7 @@ int hx_hid_parse_RD_for_idsz(void)
 				switch (itemDesc & 0xFC) {
 					case 0x04:
 						current_value = calculate_prop_value(current_desc, current_desc_size);
-						current_usage_page = current_value;
+						// current_usage_page = current_value;
 						break;
 					case 0x80:
 						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].id = current_id;

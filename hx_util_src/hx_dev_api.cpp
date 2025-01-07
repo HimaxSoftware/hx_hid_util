@@ -2063,7 +2063,7 @@ static int hx_hid_parse_criteria_file(OPTDATA& opt_data, hx_criteria_t** result,
 	char *tok = NULL;
 	bool keyword_match;
 	unsigned int current_idx;
-	int tok_idx;
+	// int tok_idx;
 	uint32_t rx_cnt;
 
 	/* Clean up */
@@ -2079,7 +2079,7 @@ static int hx_hid_parse_criteria_file(OPTDATA& opt_data, hx_criteria_t** result,
 			if (tok == NULL) {
 				continue;
 			}
-			tok_idx = 0;
+			// tok_idx = 0;
 START_KEYWORD_MATCH:
 			keyword_match = false;
 			for (unsigned int i = 0; i < sizeof(hx_criteria_table)/sizeof(hx_criteria_t); i++) {
@@ -2095,7 +2095,7 @@ START_KEYWORD_MATCH:
 					case ONE_PARAM:
 						tok = strtok(NULL, ",");
 						if (tok != NULL) {
-							tok_idx++;
+							// tok_idx++;
 							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].default_value)) > 0) {
 								hx_criteria_table[current_idx].activated = true;
 							} else {
@@ -2116,7 +2116,7 @@ START_KEYWORD_MATCH:
 						tok = strtok(NULL, ",");
 						rx_cnt = 0;
 						while (tok != NULL) {
-							tok_idx++;
+							// tok_idx++;
 
 							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
 								hx_criteria_table[current_idx].param_count++;
@@ -2141,13 +2141,13 @@ START_KEYWORD_MATCH:
 								tok = strtok(line, ",");
 								if (tok == NULL)
 									continue;
-								tok_idx = 0;
+								// tok_idx = 0;
 								goto START_KEYWORD_MATCH;
 							}
 							tok = strtok(line + 1, ",");
 							if (tok == NULL)
 								continue;
-							tok_idx = 0;
+							// tok_idx = 0;
 							// rx_cnt = 0;
 							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
 								hx_criteria_table[current_idx].param_count++;
@@ -2155,7 +2155,7 @@ START_KEYWORD_MATCH:
 
 								tok = strtok(NULL, ",");
 								while (tok != NULL) {
-									tok_idx++;
+									// tok_idx++;
 
 									if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
 										hx_criteria_table[current_idx].param_count++;
@@ -2643,7 +2643,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	int32_t *lowerBond_data;
 	bool bUpperBondFound;
 	int32_t *upperBond_data;
-	bool bSelfTestCompleted = false;
+	// bool bSelfTestCompleted = false;
 	uint8_t lastState;
 	int rx_num;
 	int tx_num;
@@ -2769,7 +2769,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 									nDataRecv = 0;
 									cmd[0] = 0xFF;
 									lastState = 0x0;
-									bSelfTestCompleted = false;
+									// bSelfTestCompleted = false;
 									for (retry_cnt = 0; retry_cnt < retry_limit; retry_cnt++) {
 										if (!pollingForResult(HID_SELF_TEST_ID, cmd, stSz, pollingInterval, 7,	recv, &nDataRecv)) {
 											if (nDataRecv == 0) {
@@ -2836,7 +2836,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 											}
 										} else {
 											//test completed
-											bSelfTestCompleted = true;
+											// bSelfTestCompleted = true;
 											hx_printf("Self test completed.\n");
 											log(fp, "Self test completed.\n");
 											break;
@@ -3605,7 +3605,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 	float block_signal;
 	float noise_sd_avg;
 	float noise_sd_max;
-	float max_snr;
+	// float max_snr;
 	float max_avg_snr;
 	float avg_snr;
 	bool collected;
@@ -3942,7 +3942,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 				frame_signal, touched_signal_avg);
 			hx_printf("[Noise]Un-touched Standard Deviation Noise AVG: %f\n", untouched_sd_avg);
 
-			max_snr = snr_cal(block_signal, untouched_sd_avg);
+			// max_snr = snr_cal(block_signal, untouched_sd_avg);
 			max_avg_snr = snr_cal(frame_signal, untouched_sd_avg);
 			avg_snr = snr_cal(touched_signal_avg, untouched_sd_avg);
 
