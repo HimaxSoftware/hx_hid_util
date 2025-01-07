@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)  
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).  
 
-## [Unreleased]
+## [1.3.0]
 ### Added
 - SNR option -n to calculate SNR on target device.  
 - hid_show_version option -f to correct customer view of firmware version.
@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Disable/Enable HID input after re-flash FW if -e specified.
 - Wording in README.md, remove unnecessary "Add" in Added section.
 - Added another applicable VID(0x3558) of Himax.
+
 ## [1.2.5] - 2023-08-16
 ### Added
 - Self test log output to specified folder after each test.
