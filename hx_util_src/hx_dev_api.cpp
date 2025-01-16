@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Himax Technologies, Limited.
+ * Copyright (C) 2025 Himax Technologies, Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
