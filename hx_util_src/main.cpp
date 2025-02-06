@@ -30,7 +30,7 @@
 #include "hx_dev_api.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.3.2"
+#define HX_UTIL_VER "V1.3.3"
 
 #define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:X:ZYo:e:n:fJ:xyz"
 
@@ -504,7 +504,8 @@ int main(int argc, char *argv[])
 
 	time_s = get_current_ms();
 
-	if (!is_opt_set(&opt_data, info_option) && !is_opt_set(&opt_data, info_hid_option))
+	if (!IS_OR_OPTION_SET(opt_data.options, info_option) &&
+	    !IS_OR_OPTION_SET(opt_data.options, info_hid_option))
 		print_version();
 
 	if (is_opt_set(&opt_data, info_option)) {
