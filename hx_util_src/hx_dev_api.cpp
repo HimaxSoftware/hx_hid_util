@@ -808,8 +808,12 @@ int himax_fw_update(uint8_t *fw, uint32_t len)
 
 	himax_flash_programming(fw, len);
 
-	if (himax_check_CRC(fw_addr_program_reload_from, len) == 0)
+	if (himax_check_CRC(fw_addr_program_reload_from, len) == 0) {
 		result = 0;
+		printf("%s: FW update succeed!.\n", __func__);
+	} else {
+		printf("%s: FW update failed: CRC check fail.\n", __func__);
+	}
 
 	return result;
 }
