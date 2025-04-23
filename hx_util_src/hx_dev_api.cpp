@@ -2499,6 +2499,9 @@ RESTART_POLL_PROC:
 			}
 			retry_cnt = 0;
 			while (retry_cnt++ < retry_limit) {
+				if (retry_cnt > 1)
+					usleep(10 * 1000);
+
 				ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame_data, frame_sz);
 				if ((ret == 0) && (frame_data[1] == 0x5A) && (frame_data[2] == 0xA5)) {
 					correct_frames++;
@@ -2640,7 +2643,9 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	uint8_t *recv = NULL;
 	int nDataRecv = 0;
 	const int retry_limit = 500;
+	const int sw_mode_retry_limit = 3;
 	int retry_cnt = 0;
+	int sw_mode_retry_cnt = 0;
 	int total_sz;
 	int frame_sz;
 	bool bLowerBondFound;
@@ -2766,6 +2771,8 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 								// 	}
 								// 	usleep(500*1000);
 								// }
+								sw_mode_retry_cnt = 0;
+SW_MODE_RETRY_START:
 								memset(cmd, 0, stSz);
 								cmd[0] = test_items[i].hid_switch;
 								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
@@ -2787,6 +2794,28 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 														if (lastState != recv[0]) {
 															hx_printf("self test init stage.\n");
 															log(fp, "self test init stage.\n");
+														}
+														if ((retry_cnt > 10) && (sw_mode_retry_cnt < sw_mode_retry_limit)) {
+															hx_printf("Switch mode, retry %d.\n", sw_mode_retry_cnt);
+															log(fp, "Switch mode, retry %d.\n", sw_mode_retry_cnt);
+															cmd[0] = 0x01;
+															ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
+															if (ret == 0) {
+																hx_printf("Reset self test succeed.\n");
+																log(fp, "Reset self test succeed.\n");
+																usleep(1000 * 1000);
+																sw_mode_retry_cnt++;
+																if (sw_mode_retry_cnt == sw_mode_retry_limit) {
+																	hx_printf("Switch mode retry limit reached, next.\n");
+																	log(fp, "Switch mode retry limit reached, next.\n");
+																	goto NEXT_ITEM;
+																} else {
+																	goto SW_MODE_RETRY_START;
+																}
+															} else {
+																hx_printf("Reset self test failed.\n");
+																log(fp, "Reset self test failed.\n");
+															}
 														}
 														break;
 													case 0xF2:
