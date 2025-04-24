@@ -2642,8 +2642,9 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	uint8_t *cmd = NULL;
 	uint8_t *recv = NULL;
 	int nDataRecv = 0;
-	const int retry_limit = 500;
+	const int retry_limit = 200;
 	const int sw_mode_retry_limit = 3;
+	const uint32_t sw_mode_retry_interval_us = 500 * 1000;
 	int retry_cnt = 0;
 	int sw_mode_retry_cnt = 0;
 	int total_sz;
@@ -2667,6 +2668,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	bool overall_result = true;
 	int tx_ic_num;
 	int rx_ic_num;
+	uint32_t stage_limit = 10;
 
 	is_output_file = is_opt_set(&opt_data, OPTION_HID_CRITERIA_OUTPUT_PATH);
 	gettimeofday(&tv, NULL);
@@ -2773,13 +2775,13 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 								// }
 								sw_mode_retry_cnt = 0;
 SW_MODE_RETRY_START:
+								lastState = 0x0;
 								memset(cmd, 0, stSz);
 								cmd[0] = test_items[i].hid_switch;
 								ret = hx_hid_set_feature(HID_SELF_TEST_ID, cmd, stSz);
 								if (ret == 0) {
 									nDataRecv = 0;
 									cmd[0] = 0xFF;
-									lastState = 0x0;
 									// bSelfTestCompleted = false;
 									for (retry_cnt = 0; retry_cnt < retry_limit; retry_cnt++) {
 										if (!pollingForResult(HID_SELF_TEST_ID, cmd, stSz, pollingInterval, 7,	recv, &nDataRecv)) {
@@ -2791,11 +2793,25 @@ SW_MODE_RETRY_START:
 												if ((recv[0] & 0xF0) == 0xF0) {
 													switch (recv[0]) {
 													case 0xF1:
-														if (lastState != recv[0]) {
+													case 0xF2:
+													case 0xF3:
+														if (lastState != recv[0] && recv[0] == 0xF1) {
 															hx_printf("self test init stage.\n");
 															log(fp, "self test init stage.\n");
+															retry_cnt = 0;
+															stage_limit = 10;
+														} else if (lastState != recv[0] && recv[0] == 0xF2) {
+															hx_printf("self test started.\n");
+															log(fp, "self test started.\n");
+															retry_cnt = 0;
+															stage_limit = 10;
+														} else if (lastState != recv[0] && recv[0] == 0xF3) {
+															hx_printf("self test on going.\n");
+															log(fp, "self test on going.\n");
+															retry_cnt = 0;
+															stage_limit = retry_limit - 1;
 														}
-														if ((retry_cnt > 10) && (sw_mode_retry_cnt < sw_mode_retry_limit)) {
+														if ((retry_cnt >= stage_limit) && (sw_mode_retry_cnt < sw_mode_retry_limit)) {
 															hx_printf("Switch mode, retry %d.\n", sw_mode_retry_cnt);
 															log(fp, "Switch mode, retry %d.\n", sw_mode_retry_cnt);
 															cmd[0] = 0x01;
@@ -2803,7 +2819,7 @@ SW_MODE_RETRY_START:
 															if (ret == 0) {
 																hx_printf("Reset self test succeed.\n");
 																log(fp, "Reset self test succeed.\n");
-																usleep(1000 * 1000);
+																usleep(sw_mode_retry_interval_us);
 																sw_mode_retry_cnt++;
 																if (sw_mode_retry_cnt == sw_mode_retry_limit) {
 																	hx_printf("Switch mode retry limit reached, next.\n");
@@ -2816,18 +2832,6 @@ SW_MODE_RETRY_START:
 																hx_printf("Reset self test failed.\n");
 																log(fp, "Reset self test failed.\n");
 															}
-														}
-														break;
-													case 0xF2:
-														if (lastState != recv[0]) {
-															hx_printf("self test started.\n");
-															log(fp, "self test started.\n");
-														}
-														break;
-													case 0xF3:
-														if (lastState != recv[0]) {
-															hx_printf("self test on going.\n");
-															log(fp, "self test on going.\n");
 														}
 														break;
 													case 0xFF:

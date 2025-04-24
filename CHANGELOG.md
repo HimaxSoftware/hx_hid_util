@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)  
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).  
 
+## [1.3.6] - 2025-04-24
+### Changed
+- Reduce criteria test retry times (500->200) to reduce retry period.
+- Reduce reset period from 1s to 0.5s in criteria test.
+- Adjust reset and retry limit by stage, F1~F2 is 10 and F3 is 199 times. Each
+  stage consume different time.
+
 ## [1.3.5] - 2025-04-23
 ### Added
 - Reset and retry to switch mode failed case in criteria test. Most retry 3 times,
