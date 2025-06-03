@@ -119,26 +119,20 @@ int hx_hid_set_feature(int id, uint8_t *data, int32_t len)
 {
 	int ret;
 	uint8_t *outdata;
-	int id_sz;
-	
-	// if (id > 0xF)
-		// id_sz = 2;
-	// else
-		id_sz = 1;
 		
-	outdata = (uint8_t *)malloc(len + id_sz);
-
+	outdata = (uint8_t *)malloc(len + 1);
 	if (outdata == NULL)
 		return -ENOMEM;
 
 	outdata[0] = id;
-	if (id_sz > 1)
-		outdata[1] = id;
-	memcpy(outdata + id_sz, data, len);
+	memcpy(outdata + 1, data, len);
 
-	ret = ioctl(g_hidfd, HIDIOCSFEATURE(len+id_sz), outdata);
-	if (ret < 0)
+	ret = ioctl(g_hidfd, HIDIOCSFEATURE(len + 1), outdata);
+	if (ret < 0) {
+		free(outdata);
+
 		return ret;
+	}
 
 	free(outdata);
 
@@ -148,20 +142,25 @@ int hx_hid_set_feature(int id, uint8_t *data, int32_t len)
 int hx_hid_get_feature(int id, uint8_t *data, int32_t len)
 {
 	int ret;
+	uint8_t *indata;
 
 	if (data == NULL)
 		return -ENOMEM;
 	
-	uint8_t *indata = (uint8_t *)malloc(len + 1);
+	indata = (uint8_t *)malloc(len + 1);
 	if (indata == NULL)
 		return -ENOMEM;
+
 	indata[0] = id;
-	ret = ioctl(g_hidfd, HIDIOCGFEATURE(len+1), indata);
-	if (ret < 0)
+
+	ret = ioctl(g_hidfd, HIDIOCGFEATURE(len + 1), indata);
+	if (ret < 0) {
+		free(indata);
+
 		return ret;
+	}
 
 	memcpy(data, indata + 1, len);
-
 	free(indata);
 
 	return 0;
@@ -175,13 +174,15 @@ int hx_hid_read(uint8_t *data, int32_t len)
 int hx_hid_set_output(int id, int32_t idLen, uint8_t *data, int32_t dataLen)
 {
 	int ret;
+	uint8_t *outdata;
 
 	if (data == NULL)
 		return -ENOMEM;
 
-	uint8_t *outdata = (uint8_t *)malloc(idLen + dataLen);
+	outdata = (uint8_t *)malloc(idLen + dataLen);
 	if (outdata == NULL)
 		return -ENOMEM;
+
 	if (idLen > 0)
 		memcpy(outdata, &id, idLen);
 	memcpy(outdata + idLen, data, dataLen);
@@ -192,16 +193,16 @@ int hx_hid_set_output(int id, int32_t idLen, uint8_t *data, int32_t dataLen)
 		return ret;
 	// sync();
 
-	return (ret == (idLen + dataLen))?0:-EIO;
+	return (ret == (idLen + dataLen)) ? 0 : -EIO;
 }
 
 static int calculate_prop_value(uint8_t *data, int len)
 {
 	int32_t value = 0;
-	int32_t dlen = (len - 1)>4?4:(len - 1);
-	for (int j = 0; j < dlen; j++) {
+	int32_t dlen = (len - 1) > 4 ? 4 : (len - 1);
+
+	for (int j = 0; j < dlen; j++)
 		value = (value << 8) + data[dlen - 1 - j];
-	}
 
 	return value;
 }
@@ -477,9 +478,8 @@ int hx_hid_parse_RD_for_idsz(void)
 		return ret;
 
 	rd.size = rdsize;
-	if (ioctl(g_hidfd, HIDIOCGRDESC, &rd) < 0) {
+	if (ioctl(g_hidfd, HIDIOCGRDESC, &rd) < 0)
 		return ret;
-	}
 
 	itemDesc = rd.value[0];
 	for (int i = 0, tidx = 0, last_tidx = 0; i < rd.size; i++) {
@@ -585,52 +585,58 @@ int hx_hid_write_reg(uint32_t addr, uint32_t data, OPTDATA& opt_data)
 }
 
 bool pollingForResult(uint8_t featureId, uint8_t *expectedData, uint32_t expectDataLength,
-                            uint32_t interval_ms, uint32_t timeout_s, uint8_t *received_data, int* nDataReceived)
+					  uint32_t interval_ms, uint32_t timeout_s, uint8_t *received_data, int* nDataReceived)
 {
-    bool result = true;
-    time_t now = time(NULL);
-    time_t start = now;
-    uint8_t* data = NULL;// new uint8_t[expectDataLength];
+	bool result = true;
+	time_t now = time(NULL);
+	time_t start = now;
+	uint8_t* data = NULL;// new uint8_t[expectDataLength];
 	*nDataReceived = 0;
 
 polling_again:
-    if (data == NULL)
-        data = (uint8_t *)malloc(expectDataLength);
-    if (hx_hid_get_feature(featureId, data, expectDataLength) != 0) {
-        // Sleep(interval_ms);
-        // sleep_for(milliseconds(interval_ms));
-		usleep(interval_ms * 1000);
-    }
-    else {
-        bool cmp = true;
-        // hx_printf("Data received(%d bytes): ", expectDataLength);
-        for (uint32_t i = 0; i < expectDataLength; i++) {
-            if (data[i] != expectedData[i]) {
-                cmp = false;
-                // hx_printf("\n expect: %02X, received: %02X\n", expectedData[i], data[i]);
-                break;
-            }
-            if ((i > 0) && (i % 16 == 0))
-                ;//hx_printf("\n");
+	if (data == NULL) {
+		data = (uint8_t *)malloc(expectDataLength);
+		if (data == NULL) {
+			// hx_printf("Failed to allocate memory for data buffer\n");
+			return false;
+		}
+	}
 
-            // hx_printf("%02X ", data[i]);
-        }
-        // hx_printf("\n");
+    if (hx_hid_get_feature(featureId, data, expectDataLength) != 0) {
+		// Sleep(interval_ms);
+		// sleep_for(milliseconds(interval_ms));
+		usleep(interval_ms * 1000);
+    } else {
+		bool cmp = true;
+		// hx_printf("Data received(%d bytes): ", expectDataLength);
+		for (uint32_t i = 0; i < expectDataLength; i++) {
+			if (data[i] != expectedData[i]) {
+				cmp = false;
+				// hx_printf("\n expect: %02X, received: %02X\n", expectedData[i], data[i]);
+				break;
+			}
+			if ((i > 0) && (i % 16 == 0))
+				;//hx_printf("\n");
+
+			// hx_printf("%02X ", data[i]);
+		}
+		// hx_printf("\n");
 		// received_data.resize(expectDataLength);
 		*nDataReceived = expectDataLength;
-        for (uint32_t i = 0; i < expectDataLength; i++)
-            received_data[i] = data[i];
-        free(data);
-        return cmp;
-    }
+		for (uint32_t i = 0; i < expectDataLength; i++)
+			received_data[i] = data[i];
+		free(data);
 
-    now = time(NULL);
-    if (now - start >= timeout_s) {
-        result = false;
-    }
-    else {
-        goto polling_again;
-    }
-    free(data);
-    return result;
+		return cmp;
+	}
+
+	now = time(NULL);
+	if (now - start >= timeout_s)
+		result = false;
+	else
+		goto polling_again;
+
+	free(data);
+
+	return result;
 }

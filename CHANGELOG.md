@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)  
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).  
 
+## [1.3.7] - 2025-06-12
+### Fixed
+- Fix memory leak when set/get ioctl failed
+- Unify hx_hid_func.cpp indent and remove unused variables
+
 ## [1.3.6] - 2025-04-24
 ### Changed
 - Reduce criteria test retry times (500->200) to reduce retry period.
