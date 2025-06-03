@@ -137,8 +137,10 @@ int hx_hid_set_feature(int id, uint8_t *data, int32_t len)
 	memcpy(outdata + id_sz, data, len);
 
 	ret = ioctl(g_hidfd, HIDIOCSFEATURE(len+id_sz), outdata);
-	if (ret < 0)
+	if (ret < 0) {
+		free(outdata);
 		return ret;
+	}
 
 	free(outdata);
 
@@ -156,9 +158,12 @@ int hx_hid_get_feature(int id, uint8_t *data, int32_t len)
 	if (indata == NULL)
 		return -ENOMEM;
 	indata[0] = id;
+	memcpy(indata + 1, data, len);
 	ret = ioctl(g_hidfd, HIDIOCGFEATURE(len+1), indata);
-	if (ret < 0)
+	if (ret < 0) {
+		free(indata);
 		return ret;
+	}
 
 	memcpy(data, indata + 1, len);
 
