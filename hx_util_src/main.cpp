@@ -548,9 +548,9 @@ int main(int argc, char *argv[])
 	else if (is_opt_set(&opt_data, OPTION_HID_SELF_TEST_CRITERIA_FILE))
 		ret = hid_self_test_by_criteria_file(opt_data);
 	else if (is_opt_set(&opt_data, OPTION_READ_REG))
-		ret = read_reg(opt_data);
+		ret = reg_read(opt_data);
 	else if (is_opt_set(&opt_data, OPTION_WRITE_REG))
-		ret = write_reg(opt_data);
+		ret = reg_write(opt_data);
 	else if (is_opt_set(&opt_data, OPTION_STATUS))
 		ret = show_status(&opt_data);
 	else if (is_opt_set(&opt_data, OPTION_HID_INFO) ||
@@ -558,9 +558,9 @@ int main(int argc, char *argv[])
 			is_opt_set(&opt_data, OPTION_HID_SHOW_FW_VER_BY_HID_INFO))
 		ret = hid_show_fw_info(opt_data);
 	else if (is_opt_set(&opt_data, OPTION_HID_WRITE_REG))
-		ret = hid_write_reg(opt_data);
+		ret = hid_reg_write(opt_data);
 	else if (is_opt_set(&opt_data, OPTION_HID_READ_REG))
-		ret = hid_read_reg(opt_data);
+		ret = hid_reg_read(opt_data);
 	else if (is_opt_set(&opt_data, OPTION_HID_SHOW_DIAG)) {
 		ret = hid_show_diag(opt_data);
 		if (is_opt_set(&opt_data, OPTION_HID_SET_DATA_TYPE)) {
@@ -583,10 +583,12 @@ int main(int argc, char *argv[])
 		int errorCode = 0;
 		ret = hid_main_update(opt_data, dev_info, errorCode);
 		if (ret == 0) {
+			usleep(100 * 1000);
 			ret = hid_bl_update(opt_data, dev_info, errorCode);
 		} else if (errorCode == FWUP_ERROR_NO_BL) {
 			ret = hid_bl_update(opt_data, dev_info, errorCode);
 			if (ret == 0) {
+				usleep(100 * 1000);
 				ret = hid_main_update(opt_data, dev_info, errorCode);
 			}
 		} else {
