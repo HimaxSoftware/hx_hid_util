@@ -20,11 +20,9 @@
 #include <malloc.h>
 #include <time.h>
 #include <stdarg.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
-#include <time.h>
 #include <math.h>
 #include <endian.h>
 #include <sys/time.h>
@@ -45,22 +43,193 @@ typedef enum access_type {
 
 uint8_t hx_buf[FLASH_RW_MAX_LEN];
 
+enum {
+  PAGE_ERASE = 0b1,
+  SECTOR_ERASE = 0b10,
+  BLOCK_ERASE = 0b100
+};
+
+typedef struct flash_info {
+	uint32_t id;
+	uint16_t write_delay;
+	uint16_t chip_erase_delay;
+	uint16_t block_erase_delay;
+	uint16_t sector_erase_delay;
+	uint16_t size;
+	uint8_t block_protect_mask;
+	uint8_t erase_abilities;
+} flash_info_t;
+
+flash_info_t gFlash_table[] = {
+/* Base on HX flash support list v2.45 */
+  { 0x001128c2,  10,  1880,  800,  58,   256, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00121068,   7,     8,    8,   8,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001220C2,  10,  2000,  700,  60,   256, 0b00001100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001223C2,  10,  2800,  480,  40,   256, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001228C2,  40, 12500, 1000, 100,   256, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001230EF,  10,   500,  150,  30,   256, 0b00001100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0012381C,   2,  1000,  150,  40,   256, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00124085,   8,     8,    8,   8,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE|PAGE_ERASE },
+  { 0x0012409D,   2,   750,  200,  70,   256, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001240C4,   2,     5,    3,   3,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001240C8,   5,  1250,  300,  50,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001240EF,   2,   500,  120,  30,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00124485,   8,     8,    8,   8,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0012600B,  80,  3000,  800, 110,   256, 0b00001100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00126085,   8,     8,    8,   8,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE|PAGE_ERASE },
+  { 0x001260C8,   5,  2500,  800, 150,   256, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001260ef,   1,   750,  250, 120,   256, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0013105E,   5,  3000,  400,  90,   512, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00131068,   7,     8,    8,   8,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00132085,   8,  3000,  300,  50,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001323C2,  10,  2800,  480,  40,   512, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001328A1,  10,  1500,  200,  45,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001328C2,  10,  2700,  480,  40,   512, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0013301C,   5,  2500, 2000,  50,   512, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001330EF,  10,  1000,  150,  30,   512, 0b00010000, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0013381C,   2,  2000,  150,  40,   512, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0013409D,   2,  1500,  200,  70,   512, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001340C4,   2,     5,    3,   3,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001340C8,   5,  2500,  300,  50,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001340EF,  10,  1000,  150,  30,   512, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0013605E,   1,  2000,  200,  35,   512, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00136085,   8,    16,   16,  16,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE|PAGE_ERASE },
+  { 0x001360C8,   5,  6000,  800, 150,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001360EF,   1,  1000,  180,  45,   512, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0014301C,   5,  5000, 2000,  50,  1024, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00144020,  10,  3000,  200,  40,  1024, 0b00011000, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001440A1,  10,  6000,  400,  60,  1024, 0b00011000, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001440C8,   5,  5000,  300,  50,  1024, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001440EF,  15,  2000,  180,  50,  1024, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00146085,   8,    80,   16,  16,  1024, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0014609D,   2,  2000,  150,  70,  1024, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001460C4,   2,     5,    3,   3,  1024, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001460EF,   1,  3000,  180,  45,  1024, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001523C2,  10, 12000,  450,  38,  2048, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001540C8,   5, 10000,  300,  50,  2048, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001540EF,  10,  5000,  150,  45,  2048, 0b00011000, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0015609D,   2,  4000,  150,  70,  2048, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001560C4,   2,     5,    2,   2,  2048, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001560C8,   2,  4500,  200,  40,  2048, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001640C8,   5, 15000,  300,  50,  4096, 0b01111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0016609D,   2,  8000,  150,  70,  4096, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0016701C,  10, 18000, 2000,  50,  4096, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00168AEF,   2, 10000,  200,  45,  4096, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00174AEF,  10, 20000,  150,  45,  8192, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0017609D,   2, 16000,  150,  70,  8192, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001770EF,  10, 20000,  150,  45,  8192, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00182001, 140, 33000, 2080, 130, 16384, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0018BA20,   2, 38000,  150,  50, 16384, 0b01110000, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x001960ef,   2,  9000,  200,  50,   256, 0b00101000, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x003225C2,  40,  1250,  500,  30,   256, 0b00011100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x0052117F,   5,   750,  250, 120,   256, 0b00111100, BLOCK_ERASE|SECTOR_ERASE },
+  { 0x00000000,   5,  1000,  150,  45,   256, 0b00000000, BLOCK_ERASE|SECTOR_ERASE },// for else
+};
+
+#define FLASH_TABLE_SIZE (sizeof(gFlash_table)/sizeof(gFlash_table[0]))
+static flash_info_t *gFlash_info = &gFlash_table[FLASH_TABLE_SIZE - 1];
+
 int _hid_reg_write(uint32_t addr, uint32_t data);
 int _hid_reg_read(uint32_t addr, uint32_t* data);
+enum layout_type_t get_layout_type(hx_hid_ic_layout_header *layout);
+
+int himax_sum8(uint8_t *buf, uint32_t len)
+{
+	uint32_t i;
+	uint8_t sum = 0;
+
+	for (i = 0; i < len; i++) {
+		sum += buf[i];
+	}
+
+	return sum;
+}
 
 int himax_free_fw(HXFW *fwp)
 {
 	if (fwp) {
 		if (fwp->data) {
 			free(fwp->data);
-			printf("free fw data\n");
+			fwp->data = NULL;
+			hx_printf("free fw data\n");
 		}
 	} else {
-		printf("fwp is NULL\n");
+		hx_printf("fwp is NULL\n");
 		return 1;
 	}
 
 	return 0;
+}
+
+bool himax_check_fw_header(HXFW *fwp)
+{
+	int i, j, count, checksum;
+	uint32_t map_code;
+	uint32_t faddr;
+
+	if (fwp->len < 1024) {
+		printf("fw header length is too short\n");
+		return false;
+	}
+
+	if (!(fwp->data[14] == 0x56 || fwp->data[14] == 0x87) || himax_sum8(&fwp->data[0], 16) != 0) {
+		hx_printf("there is no fw header\n");
+		return false;
+	}
+	// printf("fw header found\n");
+	for (i = 0; i < 1024; i += 16) {
+		count = 0;
+		checksum = 0;
+		for (j = i; j < i+16; j++) {
+			if (fwp->data[j] == 0)
+				count++;
+			checksum += fwp->data[j];
+		}
+
+		if (count == 16) {
+			hx_printf("header end at offset: %d\n", i);
+			break;
+		} else if (checksum % 0x100) {
+			printf("header parse failed: checksum fail at offset %d\n", i);
+			fwp->is_info_valid = false;
+			return false;
+		} else {
+			map_code = fwp->data[i] + (fwp->data[i+1]<<8) + (fwp->data[i+2]<<16) + (fwp->data[i+3]<<24);
+			faddr = fwp->data[i+4] + (fwp->data[i+5]<<8) + (fwp->data[i+6]<<16) + (fwp->data[i+7]<<24);
+			switch (map_code) {
+			case 0x10000000:
+				// printf("map_code = %08X, faddr = %08X\n", map_code, faddr);
+				fwp->cid = fwp->data[faddr]<<8 | fwp->data[faddr+1];
+			//	printf("fw_ver_bin = %08X\n", fw_ver_bin);
+				break;
+			case 0x10000100:
+				// printf("map_code = %08X, faddr = %08X\n", map_code, faddr);
+				fwp->fw_ver = fwp->data[faddr]<<8 | fwp->data[faddr+1];
+				break;
+			case 0x10000600:
+				// printf("map_code = %08X, faddr = %08X\n", map_code, faddr);
+				fwp->tp_cfg_ver = fwp->data[faddr];
+				fwp->dd_cfg_ver = fwp->data[faddr+1];
+				break;
+			case 0x10000300:
+				// printf("map_code = %08X, faddr = %08X\n", map_code, faddr);
+				fwp->vid = fwp->data[faddr + 12] << 8 | fwp->data[faddr + 13];
+				fwp->pid = fwp->data[faddr + 14] << 8 | fwp->data[faddr + 15];
+				memcpy(fwp->ic_id, &fwp->data[faddr], 12);
+				break;
+			case 0x10000200:
+				// printf("map_code = %08X, faddr = %08X\n", map_code, faddr);
+				fwp->ic_sign_a = fwp->data[faddr];
+				memcpy(fwp->customer, &fwp->data[faddr+1], 12);
+				memcpy(fwp->project, &fwp->data[faddr+13], 12);
+				break;
+			}
+		}
+	}
+	fwp->is_info_valid = true;
+	hx_printf("fw header parse success\n");
+
+	return true;
 }
 
 int himax_load_fw(char *path, HXFW *fwp)
@@ -96,6 +265,8 @@ int himax_load_fw(char *path, HXFW *fwp)
 
 	if (fread(fwp->data, 1, fwp->len, fp) == fwp->len)	{
 		fclose(fp);
+		hx_printf("read fw data success\n");
+		himax_check_fw_header(fwp);
 		return 0;
 	} else {
 		printf("read fw data error\n");
@@ -132,7 +303,7 @@ static void himax_burst_enable(uint8_t auto_add_4_byte)
 
 	hx_buf[0] = ic_adr_conti;
 	hx_buf[1] = ic_cmd_conti;
-	ret = hx_i2c_write(hx_buf, 2);
+	ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
 	if (ret < 0) {
 		fprintf(stderr, "%s: bus access fail!\n", __func__);
 		return;
@@ -140,7 +311,7 @@ static void himax_burst_enable(uint8_t auto_add_4_byte)
 
 	hx_buf[0] = ic_adr_incr4;
 	hx_buf[1] = ic_cmd_incr4 | auto_add_4_byte;
-	ret = hx_i2c_write(hx_buf, 2);
+	ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
 	if (ret < 0) {
 		fprintf(stderr, "%s: bus access fail!\n", __func__);
 		return;
@@ -167,7 +338,7 @@ int ahb_reg_read(uint32_t addr, uint8_t *buf, uint32_t len)
 //	hx_buf[0] = 0x00;
 	hx_buf[0] = ic_adr_ahb_addr_byte_0;
 	memcpy(hx_buf+1, addr_t, 4);
-	ret = hx_i2c_write(hx_buf, 5);
+	ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 5);
 	if (ret < 0) {
 		fprintf(stderr, "set address fail\n");
 		return ret;
@@ -177,7 +348,7 @@ int ahb_reg_read(uint32_t addr, uint8_t *buf, uint32_t len)
 //	hx_buf[1] = 0x00;
 	hx_buf[0] = ic_adr_ahb_access_direction;
 	hx_buf[1] = ic_cmd_ahb_access_direction_read;
-	ret = hx_i2c_write(hx_buf, 2);
+	ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
 	if (ret < 0) {
 		fprintf(stderr, "set direction fail\n");
 		return ret;
@@ -185,7 +356,7 @@ int ahb_reg_read(uint32_t addr, uint8_t *buf, uint32_t len)
 
 //	hx_buf[0] = 0x08;
 	hx_buf[0] = ic_adr_ahb_rdata_byte_0;
-	ret = hx_i2c_read(hx_buf, 1, buf, len);
+	ret = hx_i2c_read(HX_DEFAULT_I2C_ADDR, hx_buf, 1, buf, len);
 	if (ret < 0) {
 		fprintf(stderr, "read data fail\n");
 		return ret;
@@ -215,7 +386,7 @@ int ahb_reg_write(uint32_t addr, uint8_t *val, uint32_t len)
 	hx_buf[0] = ic_adr_ahb_addr_byte_0;
 	memcpy(hx_buf+1, addr_t, 4);
 	memcpy(hx_buf+5, val, len);
-	ret = hx_i2c_write(hx_buf, len+5);
+	ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, len+5);
 	if (ret < 0) {
 		fprintf(stderr, "%s: write i2c fail!\n", __func__);
 		return ret;
@@ -283,27 +454,8 @@ int himax_reg_read(uint32_t addr, uint32_t *data, access_t type)
 	return ret;
 }
 
-int himax_sum8(uint8_t *buf, uint32_t len)
+bool himax_update_check(HXFW *fwp, hx_hid_info* hid_info = NULL)
 {
-	uint32_t i;
-	uint8_t sum = 0;
-
-	for (i = 0; i < len; i++) {
-		sum += buf[i];
-	}
-
-	return sum;
-}
-
-int himax_update_check(HXFW *fwp, hx_hid_info* hid_info = NULL)
-{
-	uint8_t *dp = NULL;
-	uint16_t i;
-	uint16_t j;
-	uint16_t checksum;
-	uint8_t count;
-	uint32_t map_code = 0;
-	unsigned long faddr = 0;
 	uint8_t tmp_data[4];
 	uint32_t fw_ver_ic = 0;
 	uint32_t fw_ver_bin = 0;
@@ -312,54 +464,39 @@ int himax_update_check(HXFW *fwp, hx_hid_info* hid_info = NULL)
 		ahb_reg_read(ic_adr_cs_central_state, tmp_data, 4);
 		if (tmp_data[0] != 0x05) {
 			printf("ic state = %X\n", tmp_data[0]);
-			return 1;
+			return true;
 		} else {
 			ahb_reg_read(fw_addr_fw_vendor_addr, tmp_data, 4);
 			fw_ver_ic = tmp_data[2]<<8 | tmp_data[3];
 		//	printf("fw_ver_ic = %08X\n", fw_ver_ic);
 		}
 	} else {
-		fw_ver_ic = (hid_info->cid[0] << 8) | hid_info->cid[1];
+		fw_ver_ic = hid_info->cid;
 	}
 
-	dp = fwp->data;
-
-	if (!(dp[14] == 0x56 || dp[14] == 0x87) || himax_sum8(&dp[0], 16) != 0) {
-		printf("there is no fw header, force update\n");
-		return 1;
-	}
-
-	for (i = 0; i < 1024; i += 16) {
-		count = 0;
-		checksum = 0;
-		for (j = i; j < i+16; j++) {
-			if (dp[j] == 0)
-				count++;
-			checksum += dp[j];
-		}
-
-		if (count == 16) {
-			printf("header end in %d, did not find version\n", i);
-			return 1;
-		} else if (checksum % 0x100) {
-			printf("checksum fail in %d\n", i);
-		} else {
-			map_code = dp[i] + (dp[i+1]<<8) + (dp[i+2]<<16) + (dp[i+3]<<24);
-			faddr = dp[i+4] + (dp[i+5]<<8) + (dp[i+6]<<16) + (dp[i+7]<<24);
-			if (map_code == 0x10000000) {
-				fw_ver_bin = dp[faddr]<<8 | dp[faddr+1];
-			//	printf("fw_ver_bin = %08X\n", fw_ver_bin);
-				break;
-			}
+	if (!fwp->is_info_valid) {
+		printf("fw header check fail, force update\n");
+		return true;
+	} else if (hid_info != NULL) {
+		if (strncmp(fwp->ic_id, hid_info->ic_sign_2, 12) != 0 ||
+			strncmp(fwp->customer, hid_info->customer, 12) != 0 ||
+			strncmp(fwp->project, hid_info->project, 12) != 0) {
+				printf("compatibility check fail:\n Device: ic_id=%s, customer=%s, project=%s\n"
+			           " Firmware: ic_id=%s, customer=%s, project=%s\n",
+			           hid_info->ic_sign_2, hid_info->customer, hid_info->project,
+					   fwp->ic_id, fwp->customer, fwp->project);
+			return false;
 		}
 	}
+
+	fw_ver_bin = fwp->cid;
 
 	printf("fw_ver_bin = %08X; fw_ver_ic = %08X\n", fw_ver_bin, fw_ver_ic);
 
 	if (fw_ver_bin > fw_ver_ic)
-		return 1;
+		return true;
 
-	return 0;
+	return false;
 }
 
 static bool himax_wait_wip(uint32_t Timing)
@@ -418,39 +555,58 @@ static void himax_init_psl(void)
 #endif
 static void himax_system_reset(void)
 {
+	uint8_t tmp_data[4] = {0};
+	int retry = 0;
+
+	ahb_reg_write(fw_addr_ctrl_fw, tmp_data, 4);
+
+	do {
+		tmp_data[0] = 0x55;
+		tmp_data[1] = 0; tmp_data[2] = 0; tmp_data[3] = 0;
+		ahb_reg_write(fw_addr_system_reset, tmp_data, 4);
+
+		usleep(10000);
+
+		ahb_reg_read(fw_addr_flag_reset_event, tmp_data, 4);
+		printf("%s:Read status from IC = %X,%X\n", __func__, tmp_data[0], tmp_data[1]);
+	} while ((tmp_data[1] != 0x02 || tmp_data[0] != 0x00) && retry++ < 5);
+}
+
+[[maybe_unused]]
+static void himax_enter_safe_mode(void)
+{
+	int ret = 0;
+
+	/**
+	 * I2C_password[7:0] set Enter safe mode : 0x31 ==> 0x27 0x95
+	 */
+	hx_buf[0] = ic_adr_i2c_psw_lb;
+	hx_buf[1] = ic_cmd_i2c_psw_lb;
+	hx_buf[2] = ic_cmd_i2c_psw_ub;
+	ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 3);
+	if (ret < 0)
+		printf("%s: bus access fail!\n", __func__);
+}
+
+[[maybe_unused]]
+static void himax_safe_mode_reset(void)
+{
 	int ret = 0;
 	uint8_t tmp_data[4];
 	int retry = 0;
-
 	uint8_t data_clear[4] = {0};
 
 	ahb_reg_write(fw_addr_ctrl_fw, data_clear, 4);
 	do {
 		/* reset code*/
-		/**
-		 * I2C_password[7:0] set Enter safe mode : 0x31 ==> 0x27
-		 */
-		hx_buf[0] = ic_adr_i2c_psw_lb;
-		hx_buf[1] = ic_cmd_i2c_psw_lb;
-		ret = hx_i2c_write(hx_buf, 2);
-		if (ret < 0)
-			printf("%s: bus access fail!\n", __func__);
-
-		/**
-		 * I2C_password[15:8] set Enter safe mode :0x32 ==> 0x95
-		 */
-		hx_buf[0] = ic_adr_i2c_psw_ub;
-		hx_buf[1] = ic_cmd_i2c_psw_ub;
-		ret = hx_i2c_write(hx_buf, 2);
-		if (ret < 0)
-			printf("%s: bus access fail!\n", __func__);
+		himax_enter_safe_mode();
 
 		/**
 		 * I2C_password[7:0] set Enter safe mode : 0x31 ==> 0x00
 		 */
 		hx_buf[0] = ic_adr_i2c_psw_lb;
 		hx_buf[1] = 0x00;
-		ret = hx_i2c_write(hx_buf, 2);
+		ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
 		if (ret < 0)
 			printf("%s: bus access fail!\n", __func__);
 
@@ -476,19 +632,19 @@ static void himax_sense_on(uint8_t FlashMode)
 	} else {
 		hx_buf[0] = ic_adr_i2c_psw_lb;
 		hx_buf[1] = 0x00;
-		ret = hx_i2c_write(hx_buf, 2);
+		ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
 		if (ret < 0) {
 			printf("%s: cmd=%x bus access fail!\n",
 			__func__, ic_adr_i2c_psw_lb);
 		}
 
-		hx_buf[0] = ic_adr_i2c_psw_ub;
-		hx_buf[1] = 0X00;
-		ret = hx_i2c_write(hx_buf, 2);
-		if (ret < 0) {
-			printf("%s: cmd=%x bus access fail!\n",
-				__func__, ic_adr_i2c_psw_ub);
-		}
+		// hx_buf[0] = ic_adr_i2c_psw_ub;
+		// hx_buf[1] = 0X00;
+		// ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
+		// if (ret < 0) {
+		// 	printf("%s: cmd=%x bus access fail!\n",
+		// 		__func__, ic_adr_i2c_psw_ub);
+		// }
 	}
 }
 
@@ -506,8 +662,6 @@ static bool himax_sense_off(bool check_en)
 		if (cnt == 0 || (tmp_data[0] != 0xA5 && tmp_data[0] != 0x00 && tmp_data[0] != 0x87))
 			ahb_reg_write(fw_addr_ctrl_fw, fw_stop, 4);
 
-		usleep(10000);
-
 		/* check fw status */
 		ahb_reg_read(ic_adr_cs_central_state, tmp_data, 4);
 		if (tmp_data[0] != 0x05) {
@@ -515,6 +669,8 @@ static bool himax_sense_off(bool check_en)
 					__func__, tmp_data[0]);
 			break;
 		}
+
+		usleep(10 * 1000);
 
 		ahb_reg_read(fw_addr_ctrl_fw, tmp_data, 4);
 
@@ -530,22 +686,23 @@ static bool himax_sense_off(bool check_en)
 		 */
 		hx_buf[0] = ic_adr_i2c_psw_lb;
 		hx_buf[1] = ic_cmd_i2c_psw_lb;
-		ret = hx_i2c_write(hx_buf, 2);
+		hx_buf[2] = ic_cmd_i2c_psw_ub;
+		ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 3);
 		if (ret < 0) {
 			printf("%s: bus access fail!\n", __func__);
 			return false;
 		}
 
-		/**
-		 *I2C_password[15:8] set Enter safe mode :0x32 ==> 0x95
-		 */
-		hx_buf[0] = ic_adr_i2c_psw_ub;
-		hx_buf[1] = ic_cmd_i2c_psw_ub;
-		ret = hx_i2c_write(hx_buf, 2);
-		if (ret < 0) {
-			printf("%s: bus access fail!\n", __func__);
-			return false;
-		}
+		// /**
+		//  *I2C_password[15:8] set Enter safe mode :0x32 ==> 0x95
+		//  */
+		// hx_buf[0] = ic_adr_i2c_psw_ub;
+		// hx_buf[1] = ic_cmd_i2c_psw_ub;
+		// ret = hx_i2c_write(HX_DEFAULT_I2C_ADDR, hx_buf, 2);
+		// if (ret < 0) {
+		// 	printf("%s: bus access fail!\n", __func__);
+		// 	return false;
+		// }
 
 		/**
 		 *Check enter_save_mode
@@ -566,12 +723,14 @@ static bool himax_sense_off(bool check_en)
 			usleep(1000);
 			return true;
 		}
-		usleep(5000);
+		usleep(10 * 1000);
+		himax_system_reset();
 	} while (cnt++ < 5);
 
 	return false;
 }
 
+[[maybe_unused]]
 static bool himax_flash_sector_erase(uint32_t start_addr, uint32_t length)
 {
 	uint32_t page_prog_start = 0;
@@ -630,7 +789,7 @@ static bool himax_flash_sector_erase(uint32_t start_addr, uint32_t length)
 	printf("%s: END\n", __func__);
 	return true;
 }
-#if 0
+#if 1
 static bool himax_flash_block_erase(uint32_t start_addr, uint32_t length)
 {
 	uint32_t page_prog_start = 0;
@@ -670,7 +829,7 @@ static bool himax_flash_block_erase(uint32_t start_addr, uint32_t length)
 		tmp_data[3] = (page_prog_start >> 24)&0xFF;
 		tmp_data[2] = (page_prog_start >> 16)&0xFF;
 		tmp_data[1] = (page_prog_start >> 8)&0xFF;
-		tmp_data[0] = page_prog_start&0xFF;
+		tmp_data[0] = page_prog_start & 0xFF;
 		ahb_reg_write(flash_addr_spi200_addr,
 			tmp_data, 4);
 
@@ -678,9 +837,9 @@ static bool himax_flash_block_erase(uint32_t start_addr, uint32_t length)
 			trans_ctrl3, 4);
 		ahb_reg_write(flash_addr_spi200_cmd,
 			cmd4, 4);
-		usleep(200000);
+		usleep(1000 * gFlash_info->block_erase_delay);
 
-		if (!himax_wait_wip(100)) {
+		if (!himax_wait_wip(gFlash_info->block_erase_delay)) {
 			printf("%s: Erase Fail\n", __func__);
 			return false;
 		}
@@ -706,11 +865,12 @@ static void himax_flash_programming(uint8_t *FW_content, uint32_t FW_Size)
 	himax_parse_assign_cmd(flash_data_spi200_trans_fmt, trans_fmt, 4);
 	himax_parse_assign_cmd(flash_data_spi200_trans_ctrl_2, trans_ctrl2, 4);
 	himax_parse_assign_cmd(flash_data_spi200_cmd_2, cmd2, 4);
-	himax_parse_assign_cmd(flash_data_spi200_trans_ctrl_4, trans_ctrl4, 4);	
+	himax_parse_assign_cmd(flash_data_spi200_trans_ctrl_4, trans_ctrl4, 4);
 	himax_parse_assign_cmd(flash_data_spi200_cmd_6, cmd6, 4);
-	
+
 	/* 4 bytes for padding*/
 //	g_core_fp.fp_interface_on();
+	hx_printf("%s: start programming...\n", __func__);
 
 	ahb_reg_write(flash_addr_spi200_trans_fmt,
 		trans_fmt, 4);
@@ -775,6 +935,7 @@ static void himax_flash_programming(uint8_t *FW_content, uint32_t FW_Size)
 			printf("%s: bus access fail!\n", __func__);
 			return;
 		}
+		usleep(1000 * gFlash_info->write_delay);
 
 		if (!himax_wait_wip(1))
 			printf("%s:Flash_Programming Fail\n", __func__);
@@ -845,51 +1006,6 @@ END:
 	return result;
 }
 
-struct flash_info {
-	uint32_t id;
-	uint16_t write_delay;
-	uint16_t chip_erase_delay;
-	uint16_t block_erase_delay;
-	uint16_t sector_erase_delay;
-	uint8_t block_protect_mask;
-} gFlash_table[] = {
-	{ 0x001128c2, 10,  1880,  800,  58, 0b00111100 },
-	{ 0x001220c2, 10,  1800,  700,  60, 0b00001100 },
-	{ 0x001223c2, 10,  2800,  480,  40, 0b00111100 },
-	{ 0x001228c2,  0,   800,  100,   0, 0b00111100 },
-	{ 0x001230ef, 10,   500,  150,  30, 0b00001100 },
-	{ 0x0012381c,  2,  1000,  150,  40, 0b00111100 },
-	{ 0x00124085,  8,     8,    8,   8, 0b01111100 },
-	{ 0x0012409d,  2,   750,  200,  70, 0b00011100 },
-	{ 0x001240c4,  2,     5,    3,   3, 0b01111100 },
-	{ 0x001240c8,  5,   800,  250,  45, 0b01111100 },
-	{ 0x00126085,  8,     8,    8,   8, 0b01111100 },
-	{ 0x001260c8, 30,  2500,  800, 150, 0b01111100 },
-	{ 0x001260ef,  1,   750,  250, 120, 0b00011100 },
-	{ 0x00132085,  8,  3000,  300,  50, 0b01111100 },
-	{ 0x001323c2, 10,  2800,  480,  40, 0b00111100 },
-	{ 0x0013301c,  5,  2500, 2000,  50, 0b00111100 },
-	{ 0x0013381c,  2,  2000,  150,  40, 0b00111100 },
-	{ 0x0013409d,  2,  1500,  200,  70, 0b00011100 },
-	{ 0x001340c4,  2,     5,    3,   3, 0b01111100 },
-	{ 0x001340c8,  5,  2500,  250,  45, 0b01111100 },
-	{ 0x001340ef, 10,   500,  150,   0, 0b00011100 },
-	{ 0x0013605e,  1,  2000,  200,  35, 0b00011100 },
-	{ 0x00136085,  8,     8,    8,   8, 0b01111100 },
-	{ 0x001360c8, 40,  3000,  800, 150, 0b01111100 },
-	{ 0x0014301c,  5,  5000, 2000,  50, 0b00111100 },
-	{ 0x001440c8,  5,  4000,  250,  45, 0b01111100 },
-	{ 0x001460c4,  2,     5,    3,   3, 0b01111100 },
-	{ 0x001540c8,  5, 10000,  300,  50, 0b01111100 },
-	{ 0x0015609d,  2,  4000,  150,  70, 0b00011100 },
-	{ 0x001640c8,  5, 10000,  300,  50, 0b01111100 },
-	{ 0x0017609d,  2,  4000,  150,  70, 0b00011100 },
-	{ 0x001960ef,  2,  9000,  200,  50, 0b00101000 },
-	{ 0x003225c2,  0,  1250,  500,  30, 0b00011100 },
-	{ 0x0052117f,  5,   750,  250, 120, 0b00111100 },
-	{ 0x00000000,  0,   800,  100,   0, 0b00000000 },// for else
-};
-
 static bool get_flash_id(int32_t *flash_id, access_t access_mode)
 {
 	const uint32_t reg_10_addr = 0x80000010;
@@ -922,23 +1038,44 @@ static bool get_flash_id(int32_t *flash_id, access_t access_mode)
 	return true;
 }
 
+static bool match_flash_id(int32_t flash_id)
+{
+	long unsigned int i = 0;
+
+	if (flash_id < 0)
+		return false;
+
+	for (i = 0; i < FLASH_TABLE_SIZE; i++) {
+		if (gFlash_table[i].id == (uint32_t)flash_id) {
+			gFlash_info = &gFlash_table[i];
+			return true;
+		}
+		if (gFlash_table[i].id == 0x00000000U) {
+			hx_printf("%s: Not support this flash ID: %08X\n",
+				__func__, flash_id);
+			return false;
+		}
+	}
+
+	return false;
+}
+
 static int16_t get_block_protect_mask(int32_t flash_id)
 {
-	int i = 0;
+	long unsigned int i = 0;
 	int16_t block_protect_mask = -1;
 
 	if (flash_id < 0)
 		return 0;
 
-	for (i = 0; ; i++) {
+	for (i = 0; i < FLASH_TABLE_SIZE; i++) {
+		block_protect_mask = gFlash_table[i].block_protect_mask;
 		if (gFlash_table[i].id == (uint32_t)flash_id) {
-			block_protect_mask = gFlash_table[i].block_protect_mask;
 			break;
 		}
 		if (gFlash_table[i].id == 0x00000000U) {
 			hx_printf("%s: Not support this flash ID: %08X\n",
 				__func__, flash_id);
-			break;
 		}
 	}
 
@@ -947,23 +1084,20 @@ static int16_t get_block_protect_mask(int32_t flash_id)
 
 static uint16_t get_write_delay(int32_t flash_id)
 {
-	int i = 0;
+	long unsigned int i = 0;
 	uint16_t write_delay;
 
 	if (flash_id < 0)
-		return gFlash_table[sizeof(gFlash_table)/sizeof(gFlash_table[0]) - 1].write_delay;
+		return gFlash_table[FLASH_TABLE_SIZE - 1].write_delay;
 
-	for (i = 0; ; i++) {
-		if (gFlash_table[i].id == (uint32_t)flash_id) {
-			write_delay = gFlash_table[i].write_delay;
+	for (i = 0; i < FLASH_TABLE_SIZE; i++) {
+		write_delay = gFlash_table[i].write_delay;
+		if (gFlash_table[i].id == (uint32_t)flash_id)
 			break;
-		}
-		if (gFlash_table[i].id == 0x00000000U) {
+
+		if (gFlash_table[i].id == 0x00000000U)
 			hx_printf("%s: Not support this flash ID: %08X\n",
 				__func__, flash_id);
-			write_delay = gFlash_table[i].write_delay;
-			break;
-		}
 	}
 
 	return write_delay;
@@ -1072,17 +1206,29 @@ static bool switch_block_protect(int32_t flash_id, bool enable, access_t access_
 	usleep(get_write_delay(flash_id) * 1000);
 
 	ret |= himax_reg_write(reg_20_addr, reg_20_data_3, access_mode);// set CMD 0x42000000
+	if (ret != 0) {
+		hx_printf("%s: bus access fail!\n", __func__);
+		return false;
+	}
 	do {
-		ret |= himax_reg_write(reg_24_addr, reg_24_data_3, access_mode);// set CMD 0x05
+		ret = himax_reg_write(reg_24_addr, reg_24_data_3, access_mode);// set CMD 0x05
+		if (ret != 0) {
+			hx_printf("%s: bus access fail!\n", __func__);
+			return false;
+		}
 
-		ret |= himax_reg_read(reg_2c_addr, (uint32_t *)tmp_data, access_mode);
-		if ((ret != 0) || (tmp_data[0] & 0x03) == 0)
+		ret = himax_reg_read(reg_2c_addr, (uint32_t *)tmp_data, access_mode);
+		if (ret != 0) {
+			hx_printf("%s: bus access fail!\n", __func__);
+			return false;
+		}
+		if ((tmp_data[0] & 0x03) == 0)
 			break;
 
 		usleep(1000);
 	} while (i++ < max_retry);
 
-	if ((ret == 0) && i < max_retry) {
+	if (i < max_retry) {
 		hx_printf("%s: Switch block protect %s success!\n",
 			__func__, enable ? "enable" : "disable");
 		return true;
@@ -1127,18 +1273,26 @@ static int unlock_flash(access_t access_mode)
 int himax_fw_update(uint8_t *fw, uint32_t len)
 {
 	int result = -1;
+	int32_t flash_id = -1;
 	uint8_t tmp_data[4] = {0x01, 0x00, 0x00, 0x00};
 
-	himax_system_reset();
+	// himax_system_reset();
 
 	himax_sense_off(true);
 
-	unlock_flash(ACCESS_AHB);
+	if (get_flash_id(&flash_id, ACCESS_AHB)) {
+		if (!match_flash_id(flash_id)) {
+			printf("%s: Not supported flash ID: %08X, use default settings\n", __func__, flash_id);
+		}
+	}
+	if (gFlash_info->block_protect_mask != 0)
+		unlock_flash(ACCESS_AHB);
 
 //	himax_flash_speed_set(HX_FLASH_SPEED_12p5M);
 	ahb_reg_write(flash_clk_setup_addr, tmp_data, 4);
 
-	himax_flash_sector_erase(0x00, len);
+	// himax_flash_sector_erase(0x00, len);
+	himax_flash_block_erase(0, len);
 
 	himax_flash_programming(fw, len);
 
@@ -1247,35 +1401,24 @@ static void himax_read_fw_ver(void)
 	printf("Project ID = %s\n", data);
 }
 
-int burn_firmware(DEVINFO *devp, OPTDATA *optp)
+int ahb_update_logic(HXFW *fw, DEVINFO *devp, OPTDATA *optp)
 {
 	int ret = 0;
-	HXFW fw;
 	uint8_t tmp_data[4] = {0};
 	uint32_t burnlen = 0;
-
-	if (!devp || !optp) {
-		printf("%s: parameter error\n", __func__);
-		return 1;
-	}
-
-	if (himax_load_fw(optp->fw_path, &fw)) {
-		printf("load firmware fail\n");
-		return 1;
-	}
+	bool crc_pass = false;
 
 	if (himax_scan_device(optp)) {
 		printf("scan device fail\n");
-		ret = 1;
-		goto exit;
+		return -ENODEV;
 	}
 
 	// check communication with IC
 	hx_buf[0] = ic_adr_conti;
-	ret = hx_i2c_read(hx_buf, 1, tmp_data, 1);
+	ret = hx_i2c_read(HX_DEFAULT_I2C_ADDR, hx_buf, 1, tmp_data, 1);
 	if (ret < 0) {
 		printf("communication check fail\n");
-		ret = 1;
+		ret = -EIO;
 		goto exit;
 	}
 
@@ -1289,22 +1432,24 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 	printf("fwver = %X\n", tmp_data[2] << 8 | tmp_data[3]);
 
 	if(is_opt_set(optp, OPTION_CMP_VER)) {
-		if (!himax_update_check(&fw)) {
+		if (!himax_update_check(fw)) {
 			printf("don't need update\n");
-			ret = 1;
+			ret = 0;
 			goto exit;
 		}
 	}
 
 	if(is_opt_set(optp, OPTION_ALL_LEN))
-		burnlen = fw.len;
+		burnlen = fw->len;
 	else
 		burnlen = 0x3C000;
 
 	printf("burn length is %d\n", burnlen);
 
 //	himax_fw_update(fw.data, fw.len);
-	himax_fw_update(fw.data, burnlen);
+	if (himax_fw_update(fw->data, burnlen) == 0)
+		crc_pass = true;
+
 
 //	g_core_fp.fp_reload_disable(0);
 	himax_parse_assign_cmd(driver_data_fw_define_flash_reload_en, tmp_data, 4);
@@ -1323,8 +1468,73 @@ int burn_firmware(DEVINFO *devp, OPTDATA *optp)
 		printf("fwver = %X\n", tmp_data[2] << 8 | tmp_data[3]);
 	}
 
+	if (crc_pass && !ret) {
+		printf("Firmware update succeed and reload done!\n");
+	} else if (crc_pass && ret) {
+		printf("Firmware update succeed but reload fail!\n");
+		ret = 0;
+	} else {
+		printf("Firmware update failed!\n");
+	}
 exit:
 	hx_close_i2c_device();
+
+	return ret;
+}
+
+int show_fw_info(OPTDATA& opt_data)
+{
+	HXFW fw = {0};
+	int ret;
+
+	if (himax_load_fw(opt_data.fw_path, &fw)) {
+		printf("load firmware fail\n");
+		return -EIO;
+	}
+	// printf("Firmware file: %s loaded\n", opt_data.fw_path);
+	if (fw.is_info_valid) {
+		printf("Firmware Info:\n");
+		printf("  IC ID: %s\n", fw.ic_id);
+		printf("  IC sign A: %c\n", fw.ic_sign_a);
+		printf("  Project: %s\n", fw.project);
+		printf("  Customer: %s\n", fw.customer);
+		printf("  Vendor ID: %04X\n", fw.vid);
+		printf("  Product ID: %04X\n", fw.pid);
+		printf("  CID Version: %04X\n", fw.cid);
+		printf("  Firmware Version: %04X\n", fw.fw_ver);
+		printf("  TP config Version: %02X\n", fw.tp_cfg_ver);
+		printf("  Display config Version: %02X\n", fw.dd_cfg_ver);
+	}
+
+	himax_free_fw(&fw);
+
+	return ret;
+}
+
+int burn_firmware(DEVINFO *devp, OPTDATA *optp)
+{
+	int ret = 0;
+	int i = 0;
+	HXFW fw = {0};
+
+	if (!devp || !optp) {
+		printf("%s: parameter error\n", __func__);
+		return 1;
+	}
+
+	if (himax_load_fw(optp->fw_path, &fw)) {
+		printf("load firmware fail\n");
+		return 1;
+	}
+
+	do {
+		ret = ahb_update_logic(&fw, devp, optp);
+		if (ret == 0) {
+			printf("Firmware update succeed!\n");
+			break;
+		}
+		printf("Firmware update attempt %d failed, retrying...\n", i + 1);
+	} while (i++ < 2);
 
 	himax_free_fw(&fw);
 
@@ -1382,6 +1592,153 @@ exit:
 	return ret;
 }
 
+int update_info_by_hid(DEVINFO& devp, OPTDATA& opt_data)
+{
+	int ret = -1;
+	struct __attribute__((packed)) {
+		uint8_t id;
+		uint16_t length;
+		hx_hid_info info;
+	} hx_hid_info_data;
+	uint8_t hx_hid_request_info_seq[] = {
+        0x05, 0x00, 0x30 | HID_CFG_ID, 0x02, 0x06, 0x00
+	};
+	uint8_t possible_hid_i2c_addrs[] = { 0x41, 0x4f };
+	bool read_success = false;
+
+	if (himax_scan_device(&opt_data))
+		return ret;
+
+	if (opt_data.hid_i2c_addr != 0) {
+		if (hid_i2c_read(opt_data.hid_i2c_addr, hx_hid_request_info_seq, sizeof(hx_hid_request_info_seq), (uint8_t *)&hx_hid_info_data, sizeof(hx_hid_info_data)) >= 0) {
+			read_success = true;
+		}
+	} else {
+		for (size_t i = 0; i < sizeof(possible_hid_i2c_addrs); i++) {
+			if (hid_i2c_read(possible_hid_i2c_addrs[i], hx_hid_request_info_seq, sizeof(hx_hid_request_info_seq), (uint8_t *)&hx_hid_info_data, sizeof(hx_hid_info_data)) >= 0) {
+				read_success = true;
+				opt_data.hid_i2c_addr = possible_hid_i2c_addrs[i];
+				break;
+			}
+		}
+	}
+
+	if (read_success) {
+		memcpy(&opt_data.hid_info, &hx_hid_info_data.info, sizeof(hx_hid_info));
+		opt_data.hid_info.cid = be16toh(opt_data.hid_info.cid);
+		opt_data.hid_info.fw_ver = be16toh(opt_data.hid_info.fw_ver);
+		opt_data.hid_info.vid = be16toh(opt_data.hid_info.vid);
+		opt_data.hid_info.pid = be16toh(opt_data.hid_info.pid);
+		opt_data.hid_info.yres = be16toh(opt_data.hid_info.yres);
+		opt_data.hid_info.xres = be16toh(opt_data.hid_info.xres);
+		opt_data.hid_info.pen_yres = be16toh(opt_data.hid_info.pen_yres);
+		opt_data.hid_info.pen_xres = be16toh(opt_data.hid_info.pen_xres);
+		opt_data.hid_info.flash_fw_size = be16toh(opt_data.hid_info.flash_fw_size);
+		ret = 0;
+	}
+
+	hx_close_i2c_device();
+
+	return ret;
+}
+
+size_t calculateMappingEntries(hx_hid_fw_unit_t* table, int totalSize)
+{
+	size_t actual_entries = 0;
+
+	for (size_t i = 0; i < (totalSize / sizeof(hx_hid_fw_unit_t)); i++) {
+		if (table[i].unit_sz != 0)
+			actual_entries++;
+		else
+			break;
+	}
+
+	return actual_entries;
+}
+
+int show_info_by_hid(DEVINFO& devp, OPTDATA& opt_data)
+{
+	int ret = -1;
+	struct __attribute__((packed)) {
+		uint8_t id;
+		uint16_t length;
+		hx_hid_info info;
+	} hx_hid_info_data;
+	uint8_t hx_hid_request_info_seq[] = {
+        0x05, 0x00, 0x30 | HID_CFG_ID, 0x02, 0x06, 0x00
+	};
+
+	if (himax_scan_device(&opt_data))
+		return ret;
+
+	if (hid_i2c_read(opt_data.hid_i2c_addr, hx_hid_request_info_seq, sizeof(hx_hid_request_info_seq), (uint8_t *)&hx_hid_info_data, sizeof(hx_hid_info_data)) < 0) {
+		printf("read hid info fail\n");
+		goto out;
+	}
+
+	hx_hid_info_data.info.cid = be16toh(hx_hid_info_data.info.cid);
+	hx_hid_info_data.info.fw_ver = be16toh(hx_hid_info_data.info.fw_ver);
+	hx_hid_info_data.info.vid = be16toh(hx_hid_info_data.info.vid);
+	hx_hid_info_data.info.pid = be16toh(hx_hid_info_data.info.pid);
+	hx_hid_info_data.info.yres = be16toh(hx_hid_info_data.info.yres);
+	hx_hid_info_data.info.xres = be16toh(hx_hid_info_data.info.xres);
+	hx_hid_info_data.info.pen_yres = be16toh(hx_hid_info_data.info.pen_yres);
+	hx_hid_info_data.info.pen_xres = be16toh(hx_hid_info_data.info.pen_xres);
+	hx_hid_info_data.info.flash_fw_size = be16toh(hx_hid_info_data.info.flash_fw_size);
+
+	hx_printf("HID address: 0x%02x\n", opt_data.hid_i2c_addr);
+	hx_printf("%s : %02X %02X\n", "passwd", hx_hid_info_data.info.passwd[0], hx_hid_info_data.info.passwd[1]);
+	hx_printf("%s : %04X\n", "cid", hx_hid_info_data.info.cid);
+	hx_printf("%s : %02X\n", "panel_ver", hx_hid_info_data.info.panel_ver);
+	hx_printf("%s : %04X\n", "fw_ver", hx_hid_info_data.info.fw_ver);
+	hx_printf("%s : %C\n", "ic_sign", hx_hid_info_data.info.ic_sign);
+	hx_printf("%s : %s\n", "customer", hx_hid_info_data.info.customer);
+	hx_printf("%s : %s\n", "project", hx_hid_info_data.info.project);
+	hx_printf("%s : %s\n", "fw_major", hx_hid_info_data.info.fw_major);
+	hx_printf("%s : %s\n", "fw_minor", hx_hid_info_data.info.fw_minor);
+	hx_printf("%s : %s\n", "date", hx_hid_info_data.info.date);
+	hx_printf("%s : %s\n", "ic_sign_2", hx_hid_info_data.info.ic_sign_2);
+	hx_printf("%s : %04X\n", "vid", hx_hid_info_data.info.vid);
+	hx_printf("%s : %04X\n", "pid", hx_hid_info_data.info.pid);
+	// hx_printf("%s : %02X.%02X.%02X\n", "DD init version",
+	// 		  hx_hid_info_data.info.dd_cfg_info.config_version[0],
+	// 		  hx_hid_info_data.info.dd_cfg_info.config_version[1],
+	// 		  hx_hid_info_data.info.dd_cfg_info.config_version[2]);
+	hx_printf("%s : %02X\n", "Config version", hx_hid_info_data.info.cfg_version);
+	hx_printf("%s : %02X\n", "Display version", hx_hid_info_data.info.disp_version);
+	hx_printf("%s : %d\n", "RX", hx_hid_info_data.info.rx);
+	hx_printf("%s : %d\n", "TX", hx_hid_info_data.info.tx);
+	hx_printf("%s : %d\n", "YRES ", hx_hid_info_data.info.yres);
+	hx_printf("%s : %d\n", "XRES", hx_hid_info_data.info.xres);
+	hx_printf("%s : %d\n", "PT_NUM", hx_hid_info_data.info.pt_num);
+	hx_printf("%s : %d\n", "MKEY_NUM", hx_hid_info_data.info.mkey_num);
+	hx_printf("%s : %d\n", "PEN_NUM", hx_hid_info_data.info.pen_num);
+	hx_printf("%s : %d\n", "PEN_YRES", hx_hid_info_data.info.pen_yres);
+	hx_printf("%s : %d\n", "PEN_XRES", hx_hid_info_data.info.pen_xres);
+	// hx_printf("%s : %02X\n", "LTDI_IC_NUM", hx_hid_info_data.info.ltdi_ic_num);
+	hx_printf("%s : %d\n", "FlashFwSize", hx_hid_info_data.info.flash_fw_size);
+	hx_printf("FW layout : \n");
+	for (int i = 0; i < (int)calculateMappingEntries(hx_hid_info_data.info.main_mapping, sizeof(hx_hid_info_data.info.main_mapping)); i++)
+		hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+			hx_hid_info_data.info.main_mapping[i].cmd, hx_hid_info_data.info.main_mapping[i].bin_start_offset * 1024, \
+			hx_hid_info_data.info.main_mapping[i].unit_sz);
+	if (calculateMappingEntries(&hx_hid_info_data.info.display_mapping, sizeof(hx_hid_info_data.info.display_mapping)) > 0)
+		hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+			hx_hid_info_data.info.display_mapping.cmd, hx_hid_info_data.info.display_mapping.bin_start_offset * 1024, \
+			hx_hid_info_data.info.display_mapping.unit_sz);
+	hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+			hx_hid_info_data.info.bl_mapping.cmd, hx_hid_info_data.info.bl_mapping.bin_start_offset * 1024, \
+			hx_hid_info_data.info.bl_mapping.unit_sz);
+	memcpy(&opt_data.hid_info, &hx_hid_info_data.info, sizeof(hx_hid_info));
+	if (!g_show_dbg_log)
+		hx_printf("%s : %04X\n", "CID", hx_hid_info_data.info.cid);
+
+out:
+	hx_close_i2c_device();
+
+	return ret;
+}
+
 int show_status(OPTDATA *optp)
 {
 	int ret = -1;
@@ -1401,6 +1758,18 @@ int show_status(OPTDATA *optp)
 	return ret;
 }
 
+
+/*
+ * Find the HID device directory name under /sys/bus/hid/devices
+ * by matching BUS:VID:PID prefix.
+ *
+ * @bus: Linux HID bus id.
+ * @vid: Vendor ID.
+ * @pid: Product ID.
+ * @device_name: Output buffer for matched device directory name.
+ *
+ * Return: 1 if found, 0 otherwise.
+ */
 int find_hid_dev_name(int bus, int vid, int pid, char *device_name)
 {
 	int ret = 0;
@@ -1428,6 +1797,19 @@ int find_hid_dev_name(int bus, int vid, int pid, char *device_name)
 	return ret;
 }
 
+/*
+ * Find the I2C device name associated with a given HID device directory.
+ *
+ * It scans /sys/bus/i2c/devices, resolves each symbolic link target,
+ * and checks whether the target directory contains @hid_dev_name.
+ * If matched, the corresponding I2C device directory name is copied to
+ * @driver_name.
+ *
+ * @hid_dev_name: HID device directory name to match.
+ * @driver_name: Output buffer for matched I2C device name.
+ *
+ * Return: 1 if found, 0 otherwise.
+ */
 int find_device_name(char *hid_dev_name, char *driver_name)
 {
 	char dev_path[] = "/sys/bus/i2c/devices/";
@@ -1451,15 +1833,15 @@ int find_device_name(char *hid_dev_name, char *driver_name)
 		if (devs_dir_entry->d_type != DT_LNK)
 			continue;
 
-		sz = readlinkat(dirfd(devs_dir), devs_dir_entry->d_name, tmp_buf, 256);
+		sz = readlinkat(dirfd(devs_dir), devs_dir_entry->d_name, tmp_buf, sizeof(tmp_buf) - 1);
 		if (sz < 0)
 			continue;
 
 		tmp_buf[sz] = 0;
 
-		sprintf(tmp_path, "%s%s", dev_path, tmp_buf);
+		snprintf(tmp_path, sizeof(tmp_path), "%s%s", dev_path, tmp_buf);
 		dev_dir = opendir(tmp_path);
-		if (!dev_dir) 
+		if (!dev_dir)
 			continue;
 
 		while ((dev_dir_entry = readdir(dev_dir)) != NULL) {
@@ -1496,6 +1878,7 @@ int write_devname_to_sys_attr(const char *attr, const char *action)
 			if (errno == EINTR)
 				continue;
 
+			close(fd);
 			return 0;
 		}
 		break;
@@ -1508,7 +1891,7 @@ int write_devname_to_sys_attr(const char *attr, const char *action)
 
 int rebind_driver(DEVINFO *devp)
 {
-	int bus = 0x18;
+	int bus = 0x18;// i2c bus
 	int vendor = devp->vid;
 	int product = devp->pid;
 	char hid_dev_name[64];
@@ -1549,16 +1932,16 @@ int rebind_driver(DEVINFO *devp)
 		return 1;
 	}
 
-	sprintf(attr_str, "%s%s", driver_path, "unbind");
+	snprintf(attr_str, sizeof(attr_str), "%s%s", driver_path, "unbind");
 
 	if (!write_devname_to_sys_attr(attr_str, i2c_dev_name)) {
 		printf("failed to unbind HID device %s %s\n", attr_str, i2c_dev_name);
-		return 1;
+		// return 1;
+	} else {
+		usleep(300000);
 	}
 
-	usleep(300000);
-
-	sprintf(attr_str, "%s%s", driver_path, "bind");
+	snprintf(attr_str, sizeof(attr_str), "%s%s", driver_path, "bind");
 
 	if (!write_devname_to_sys_attr(attr_str, i2c_dev_name)) {
 		printf("failed to bind HID device %s %s\n", attr_str, i2c_dev_name);
@@ -1677,10 +2060,12 @@ static const hx_ic_fw_layout_mapping_t g_ic_main_code_mapping_table[] = {
 	{
 		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83121-A)},
 		.fw_table = &fw_main_121A[0],
+		.table_sz = sizeof(fw_main_121A),
 	},
 	{
 		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83102-J)},
 		.fw_table = &fw_main_102J[0],
+		.table_sz = sizeof(fw_main_102J),
 	}
 };
 
@@ -1688,26 +2073,14 @@ static const hx_ic_fw_layout_mapping_t g_ic_bl_code_mapping_table[] = {
 	{
 		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83121-A)},
 		.fw_table = &fw_bl_121A[0],
+		.table_sz = sizeof(fw_bl_121A),
 	},
 	{
 		.ic_sign_2 = {IC_SIGN_TO_CHAR(HX83102-J)},
 		.fw_table = &fw_bl_102J[0],
+		.table_sz = sizeof(fw_bl_102J),
 	}
 };
-
-size_t calculateMappingEntries(hx_hid_fw_unit_t* table, int totalSize)
-{
-	size_t actual_entries = 0;
-
-	for (size_t i = 0; i < (totalSize / sizeof(hx_hid_fw_unit_t)); i++) {
-		if (table[i].unit_sz != 0)
-			actual_entries++;
-		else
-			break;
-	}
-
-	return actual_entries;
-}
 
 int _hid_reg_write(uint32_t addr, uint32_t data)
 {
@@ -1785,56 +2158,203 @@ int hid_reg_read(OPTDATA& opt_data)
 	return ret;
 }
 
+int hid_update_fw_info(OPTDATA& opt_data)
+{
+	hx_hid_ic_layout_header *layout_info = NULL;
+	int layout_info_sz = 0;
+	int ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&opt_data.hid_info, sizeof(opt_data.hid_info));
+	if (ret != 0)
+		opt_data.is_hid_info_valid = false;
+	else
+		opt_data.is_hid_info_valid = true;
+
+	opt_data.hid_info.cid = be16toh(opt_data.hid_info.cid);
+	opt_data.hid_info.fw_ver = be16toh(opt_data.hid_info.fw_ver);
+	opt_data.hid_info.vid = be16toh(opt_data.hid_info.vid);
+	opt_data.hid_info.pid = be16toh(opt_data.hid_info.pid);
+	opt_data.hid_info.yres = be16toh(opt_data.hid_info.yres);
+	opt_data.hid_info.xres = be16toh(opt_data.hid_info.xres);
+	opt_data.hid_info.pen_yres = be16toh(opt_data.hid_info.pen_yres);
+	opt_data.hid_info.pen_xres = be16toh(opt_data.hid_info.pen_xres);
+	opt_data.hid_info.flash_fw_size = be16toh(opt_data.hid_info.flash_fw_size);
+
+	layout_info_sz = hx_hid_get_size_by_id(HID_IC_LAYOUT_INFO_ID);
+	if (layout_info_sz > 0) {
+		layout_info = (hx_hid_ic_layout_header *)malloc(layout_info_sz);
+		if (layout_info) {
+			ret = hx_hid_get_feature(HID_IC_LAYOUT_INFO_ID, (uint8_t *)layout_info, layout_info_sz);
+			if (ret == 0) {
+				free(opt_data.hid_layout_info);
+				opt_data.hid_layout_info = layout_info;
+				opt_data.hid_layout_info_sz = layout_info_sz;
+			} else {
+				free(layout_info);
+				layout_info = NULL;
+			}
+			// opt_data.hid_layout_info->ic_direction.desc.data[0] = 1;
+			// opt_data.hid_layout_info->ic_direction.desc.data[1] = 1;
+			// opt_data.hid_layout_info->total_tx_rx_ic_num.desc.layout.rx_num = 1;
+			// opt_data.hid_layout_info->total_tx_rx_ic_num.desc.layout.tx_num = 2;
+			// opt_data.hid_layout_info->total_tx_rx.desc.layout.rx_num = opt_data.hid_info.rx;
+			// opt_data.hid_layout_info->total_tx_rx.desc.layout.tx_num = opt_data.hid_info.tx * 2;
+		}
+	} else {
+		layout_info_sz = sizeof(hx_hid_ic_layout_header) + sizeof(hx_ic_layout_desc);
+		layout_info = (hx_hid_ic_layout_header *)malloc(layout_info_sz);
+		memset(layout_info, 0, layout_info_sz);
+		layout_info->all_ic_num.desc_type = IC_LAYOUT_DESC_TYPE_ALL_IC_NUM;
+		layout_info->all_ic_num.desc.data[0] = 1;
+		layout_info->ic_direction.desc_type = IC_LAYOUT_DESC_TYPE_IC_DIRECTION;
+		layout_info->total_tx_rx_ic_num.desc_type = IC_LAYOUT_DESC_TYPE_TOTAL_TX_RX_IC_NUM;
+		layout_info->total_tx_rx_ic_num.desc.layout.rx_num = 1;
+		layout_info->total_tx_rx_ic_num.desc.layout.tx_num = 1;
+		layout_info->total_tx_rx.desc_type = IC_LAYOUT_DESC_TYPE_TOTAL_TX_RX;
+		layout_info->total_tx_rx.desc.layout.rx_num = opt_data.hid_info.rx;
+		layout_info->total_tx_rx.desc.layout.tx_num = opt_data.hid_info.tx;
+		layout_info->ic_tx_rx[0].desc_type = IC_LAYOUT_DESC_TYPE_MASTER_TX_RX;
+		layout_info->ic_tx_rx[0].desc.layout.rx_num = opt_data.hid_info.rx;
+		layout_info->ic_tx_rx[0].desc.layout.tx_num = opt_data.hid_info.tx;
+		opt_data.hid_layout_info = layout_info;
+		opt_data.hid_layout_info_sz = layout_info_sz;
+	}
+	if (layout_info)
+		opt_data.hid_layout_type = get_layout_type(layout_info);
+
+	return ret;
+}
+
 int hid_show_fw_info(OPTDATA& opt_data)
 {
 	int ret;
 	hx_hid_info info;
+	hx_hid_ic_layout_header *layout_info = NULL;
+	hx_ic_layout_desc *desc = NULL;
+	int layout_info_sz = 0;
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
+		if (hx_hid_parse_RD_for_idsz(opt_data) < 0) {
+			printf("parse hid RD fail\n");
+			hx_hid_close();
+			return -EIO;
+		}
+		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, sizeof(info));
 		if (ret == 0) {
+			info.cid = be16toh(info.cid);
+			info.fw_ver = be16toh(info.fw_ver);
+			info.vid = be16toh(info.vid);
+			info.pid = be16toh(info.pid);
+			info.yres = be16toh(info.yres);
+			info.xres = be16toh(info.xres);
+			info.pen_yres = be16toh(info.pen_yres);
+			info.pen_xres = be16toh(info.pen_xres);
+			info.flash_fw_size = be16toh(info.flash_fw_size);
+			memcpy(&opt_data.hid_info, &info, sizeof(info));
+			opt_data.is_hid_info_valid = true;
 			if (is_opt_set(&opt_data, OPTION_HID_SHOW_PID_BY_HID_INFO)) {
-				printf("%02X%02X\n", info.pid[0], info.pid[1]);
+				printf("%04X\n", opt_data.hid_info.pid);
 			} else if (is_opt_set(&opt_data, OPTION_HID_SHOW_FW_VER_BY_HID_INFO)) {
-				printf("%02X%02X\n", info.cid[0], info.cid[1]);
+				printf("%04X\n", opt_data.hid_info.cid);
 			} else {
-				hx_printf("%s : %02X %02X\n", "passwd", info.passwd[0], info.passwd[1]);
-				hx_printf("%s : %02X %02X\n", "cid", info.cid[0], info.cid[1]);
-				hx_printf("%s : %02X\n", "panel_ver", info.panel_ver);
-				hx_printf("%s : %02X %02X\n", "fw_ver", info.fw_ver[0], info.fw_ver[1]);
-				hx_printf("%s : %C\n", "ic_sign", info.ic_sign);
-				hx_printf("%s : %s\n", "customer", info.customer);
-				hx_printf("%s : %s\n", "project", info.project);
-				hx_printf("%s : %s\n", "fw_major", info.fw_major);
-				hx_printf("%s : %s\n", "fw_minor", info.fw_minor);
-				hx_printf("%s : %s\n", "date", info.date);
-				hx_printf("%s : %s\n", "ic_sign_2", info.ic_sign_2);
-				hx_printf("%s : %02X %02X\n", "vid", info.vid[0], info.vid[1]);
-				hx_printf("%s : %02X %02X\n", "pid", info.pid[0], info.pid[1]);
-				hx_printf("%s : %02X\n", "Config version", info.cfg_version);
-				hx_printf("%s : %02X\n", "Display version", info.disp_version);
-				hx_printf("%s : %d\n", "RX", info.rx);
-				hx_printf("%s : %d\n", "TX", info.tx);
-				info.yres = be16toh(info.yres);
-				hx_printf("%s : %d\n", "YRES ", info.yres);
-				info.xres = be16toh(info.xres);
-				hx_printf("%s : %d\n", "XRES", info.xres);
-				hx_printf("%s : %d\n", "PT_NUM", info.pt_num);
-				hx_printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
-				hx_printf("%s : %d\n", "PEN_NUM", info.pen_num);
-				info.pen_yres = be16toh(info.pen_yres);
-				hx_printf("%s : %d\n", "PEN_YRES", info.pen_yres);
-				info.pen_xres = be16toh(info.pen_xres);
-				hx_printf("%s : %d\n", "PEN_XRES", info.pen_xres);
-				hx_printf("%s : %02X\n", "LTDI_IC_NUM", info.ic_num);
-				hx_printf("FW layout : \n");
-				for (int i = 0; i < 9; i++)
-					hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+				printf("%s : %02X %02X\n", "passwd", info.passwd[0], info.passwd[1]);
+				printf("%s : %04X\n", "cid", opt_data.hid_info.cid);
+				printf("%s : %02X\n", "panel_ver", info.panel_ver);
+				printf("%s : %04X\n", "fw_ver", opt_data.hid_info.fw_ver);
+				printf("%s : %C\n", "ic_sign", info.ic_sign);
+				printf("%s : %s\n", "customer", info.customer);
+				printf("%s : %s\n", "project", info.project);
+				printf("%s : %s\n", "fw_major", info.fw_major);
+				printf("%s : %s\n", "fw_minor", info.fw_minor);
+				printf("%s : %s\n", "date", info.date);
+				printf("%s : %s\n", "ic_sign_2", info.ic_sign_2);
+				printf("%s : %04X\n", "vid", opt_data.hid_info.vid);
+				printf("%s : %04X\n", "pid", opt_data.hid_info.pid);
+				// printf("%s : %02X.%02X.%02X\n", "DD init code version",
+				// 			info.dd_cfg_info.config_version[0], info.dd_cfg_info.config_version[1],	info.dd_cfg_info.config_version[2]);
+				printf("%s : %02X\n", "Config version", info.cfg_version);
+				printf("%s : %02X\n", "Display version", info.disp_version);
+				printf("%s : %d\n", "RX", info.rx);
+				printf("%s : %d\n", "TX", info.tx);
+				printf("%s : %d\n", "YRES ", info.yres);
+				printf("%s : %d\n", "XRES", info.xres);
+				printf("%s : %d\n", "PT_NUM", info.pt_num);
+				printf("%s : %d\n", "MKEY_NUM", info.mkey_num);
+				printf("%s : %d\n", "PEN_NUM", info.pen_num);
+				printf("%s : %d\n", "PEN_YRES", info.pen_yres);
+				printf("%s : %d\n", "PEN_XRES", info.pen_xres);
+				// printf("%s : %02X\n", "LTDI_IC_NUM", info.ltdi_ic_num);
+				printf("%s : %d\n", "FlashFwSize", info.flash_fw_size);
+				printf("FW layout : \n");
+				for (int i = 0; i < (int)calculateMappingEntries(info.main_mapping, sizeof(info.main_mapping)); i++)
+					printf("\t%2X - start : %08X, Size %d kB\n", \
 						info.main_mapping[i].cmd, info.main_mapping[i].bin_start_offset * 1024, \
 						info.main_mapping[i].unit_sz);
-				hx_printf("\t%2X - start : %08X, Size %d kB\n", \
+				if (calculateMappingEntries(&info.display_mapping, sizeof(info.display_mapping)) > 0)
+					printf("\t%2X - start : %08X, Size %d kB\n", \
+						info.display_mapping.cmd, info.display_mapping.bin_start_offset * 1024, \
+						info.display_mapping.unit_sz);
+				printf("\t%2X - start : %08X, Size %d kB\n", \
 						info.bl_mapping.cmd, info.bl_mapping.bin_start_offset * 1024, \
 						info.bl_mapping.unit_sz);
+
+				layout_info_sz = hx_hid_get_size_by_id(HID_IC_LAYOUT_INFO_ID);
+				if (layout_info_sz > 0) {
+					layout_info = (hx_hid_ic_layout_header *)malloc(layout_info_sz);
+					if (layout_info) {
+						ret = hx_hid_get_feature(HID_IC_LAYOUT_INFO_ID, (uint8_t *)layout_info, layout_info_sz);
+						if (ret == 0) {
+							if (opt_data.hid_layout_info)
+								free(opt_data.hid_layout_info);
+
+							printf("IC layout info : \n");
+							size_t ic_num = layout_info->all_ic_num.desc.data[0];
+							// printf("    Header          : %02X %02X %02X\n", layout_info->header.desc_type, layout_info->header.desc.data[0], layout_info->header.desc.data[1]);
+							printf("    All IC Num.        : %d\n", layout_info->all_ic_num.desc.data[0]);
+							printf("    Master IC location : %s-%s\n",
+							layout_info->ic_direction.desc.data[0]?"LEFT":"RIGHT",
+							layout_info->ic_direction.desc.data[1]?"TOP":"BOTTOM");
+							printf("    Total IC Num.      : RX: %d, TX: %d\n", layout_info->total_tx_rx_ic_num.desc.data[0], layout_info->total_tx_rx_ic_num.desc.data[1]);
+							printf("    Total RX TX Num.   : RX CH: %d, TX CH: %d\n", layout_info->total_tx_rx.desc.data[0], layout_info->total_tx_rx.desc.data[1]);
+							for (int i = 0; i < (int)ic_num; i++) {
+								desc = &layout_info->ic_tx_rx[i];
+								if (i == 0)
+									printf("    Master RX TX Num.  : RX CH: %d, TX CH: %d\n", desc->desc.layout.rx_num, desc->desc.layout.tx_num);
+								else
+									printf("    Slave %1d RX TX Num. : RX CH: %d, TX CH: %d\n", i, desc->desc.layout.rx_num, desc->desc.layout.tx_num);
+							}
+							opt_data.hid_layout_info = layout_info;
+							opt_data.hid_layout_info_sz = layout_info_sz;
+							opt_data.hid_layout_type = get_layout_type(layout_info);
+						} else {
+							hx_printf("Failed to get IC layout info from HID\n");
+							free(layout_info);
+							layout_info = NULL;
+							hx_hid_close();
+							return -EIO;
+						}
+					} else {
+						hx_printf("Memory allocation for layout info failed(request size: %d)\n", layout_info_sz);
+					}
+				} else {
+					hx_printf("No layout info found from HID, use default layout\n");
+					layout_info_sz = sizeof(hx_hid_ic_layout_header) + sizeof(hx_ic_layout_desc);
+					layout_info = (hx_hid_ic_layout_header *)malloc(layout_info_sz);
+					memset(layout_info, 0, layout_info_sz);
+					layout_info->all_ic_num.desc_type = IC_LAYOUT_DESC_TYPE_ALL_IC_NUM;
+					layout_info->all_ic_num.desc.data[0] = 1;
+					layout_info->ic_direction.desc_type = IC_LAYOUT_DESC_TYPE_IC_DIRECTION;
+					layout_info->total_tx_rx_ic_num.desc_type = IC_LAYOUT_DESC_TYPE_TOTAL_TX_RX_IC_NUM;
+					layout_info->total_tx_rx_ic_num.desc.layout.rx_num = 1;
+					layout_info->total_tx_rx_ic_num.desc.layout.tx_num = 1;
+					layout_info->total_tx_rx.desc_type = IC_LAYOUT_DESC_TYPE_TOTAL_TX_RX;
+					layout_info->total_tx_rx.desc.layout.rx_num = info.rx;
+					layout_info->total_tx_rx.desc.layout.tx_num = info.tx;
+					layout_info->ic_tx_rx[0].desc_type = IC_LAYOUT_DESC_TYPE_MASTER_TX_RX;
+					layout_info->ic_tx_rx[0].desc.layout.rx_num = info.rx;
+					layout_info->ic_tx_rx[0].desc.layout.tx_num = info.tx;
+					opt_data.hid_layout_info = layout_info;
+					opt_data.hid_layout_info_sz = layout_info_sz;
+					opt_data.hid_layout_type = get_layout_type(layout_info);
+				}
 			}
 		}
 
@@ -1848,14 +2368,14 @@ int hid_show_fw_info(OPTDATA& opt_data)
 int hid_show_version(OPTDATA& opt_data)
 {
 	int ret;
-	hx_hid_info info;
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
+		// ret = hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, 255);
+		ret = hid_update_fw_info(opt_data);
 		if (ret == 0) {
-			printf("%s : %02X %02X\n", "vid", info.vid[0], info.vid[1]);
-			printf("%s : %02X %02X\n", "pid", info.pid[0], info.pid[1]);
-			printf("%s : %02X %02X\n", "firmware verison", info.cid[0], info.cid[1]);
+			printf("%s : %02X %02X\n", "vid", opt_data.hid_info.vid >> 8, opt_data.hid_info.vid & 0xFF);
+			printf("%s : %02X %02X\n", "pid", opt_data.hid_info.pid >> 8, opt_data.hid_info.pid & 0xFF);
+			printf("%s : %02X %02X\n", "firmware verison", opt_data.hid_info.cid >> 8, opt_data.hid_info.cid & 0xFF);
 		}
 
 		hx_hid_close();
@@ -1865,12 +2385,14 @@ int hid_show_version(OPTDATA& opt_data)
 	}
 }
 
-int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+int hid_core_update_logic(HXFW *hxfw, OPTDATA& opt_data, DEVINFO& dinfo, uint8_t uCmd,
+						  hx_hid_fw_unit_t *fw_entry_table, size_t fw_units_sz,
+						  const hx_ic_fw_layout_mapping_t *fallback_mapping_table, size_t fallback_table_sz,
+						  int& lastError)
 {
-	hx_hid_info oinfo;
-	bool bOinfoValid = false;
 	bool bGoUpdate = false;
-	HXFW hxfw;
+	bool bHandshakePresent = false;
+	bool useFwInfoEntries = false;
 	time_t start, now;
 	uint8_t recevied_data[2] = {0};
 	int nDataRecevied = 0;
@@ -1878,11 +2400,149 @@ int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 	uint32_t writeSize;
 	uint32_t fwStartLoc;
 	uint32_t outputTimes;
-	const uint8_t main_update_cmd = 0x55;
-	int ret = 0;
 	int fw_entries = 0;
-	hx_hid_fw_unit_t* fw_entry_table = NULL;
+	int sz;
 	lastError = FWUP_ERROR_NO_ERROR;
+
+	sz = hx_hid_get_size_by_id(HID_FW_UPDATE_ID);
+	bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
+	if ((sz > 0) && bHandshakePresent) {
+		if (opt_data.is_hid_info_valid) {
+			fw_entries = calculateMappingEntries(fw_entry_table, fw_units_sz);
+			if (fw_entries > 0)
+				useFwInfoEntries = true;
+		}
+
+		if (!useFwInfoEntries && opt_data.is_hid_info_valid && fallback_mapping_table && fallback_table_sz > 0) {
+			for (size_t i = 0; i < fallback_table_sz; i++) {
+				if (memcmp(fallback_mapping_table[i].ic_sign_2, opt_data.hid_info.ic_sign_2, sizeof(opt_data.hid_info.ic_sign_2)) == 0) {
+					fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fallback_mapping_table[i].fw_table, fallback_mapping_table[i].table_sz);
+					fw_entry_table = (hx_hid_fw_unit_t *)fallback_mapping_table[i].fw_table;
+					break;
+				}
+			}
+		}
+
+		if (!is_opt_set(&opt_data, OPTION_FORCE_UPDATE)) {
+			if (opt_data.is_hid_info_valid)
+				bGoUpdate = himax_update_check(hxfw, &opt_data.hid_info);
+			else
+				bGoUpdate = false;
+		} else {
+			if (fw_entries == 0) {
+				if (fallback_mapping_table && fallback_table_sz > 0) {
+					fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fallback_mapping_table[0].fw_table, fallback_mapping_table[0].table_sz);
+					fw_entry_table = (hx_hid_fw_unit_t *)fallback_mapping_table[0].fw_table;
+				} else {
+					hx_printf("No valid firmware layout info found, can't continue update!\n");
+					lastError = FWUP_ERROR_NO_DEVICE;
+					return -EIO;
+				}
+			}
+			bGoUpdate = true;
+		}
+
+		if (bGoUpdate && (fw_entries > 0)) {
+			uint8_t cmd = 0;
+			if(hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) == 0)
+				hx_printf("ID %02X read %02X\n", HID_FW_UPDATE_HANDSHAKING_ID, cmd);
+			unlock_flash(ACCESS_HID);
+			cmd = uCmd;
+			if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) != 0) {
+				hx_printf("Initial HID FW update failed!\n");
+				lastError = FWUP_ERROR_INITIAL;
+				return -EIO;
+			} else {
+				hx_printf("Initializing HID FW update....\n");
+				usleep(100 * 1000);
+				unlock_flash(ACCESS_HID);
+			}
+			for (int i = 0; i < fw_entries; i++) {
+				start = time(NULL);
+POLL_AGAIN:
+				cmd = fw_entry_table[i].cmd;
+				if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
+					recevied_data, &nDataRecevied)) {
+					if (nDataRecevied > 0) {
+						if ((recevied_data[0] == FWUP_ERROR_MCU_A0)||(recevied_data[0] == FWUP_ERROR_MCU_00)) {
+							now = time(NULL);
+							if (now - start >= 7) {
+								lastError = recevied_data[0];
+								goto POLL_FAILED;
+							}
+							usleep(pollingInterval * 1000);
+							goto POLL_AGAIN;
+						} else if (recevied_data[0] == FWUP_ERROR_NO_BL) {
+							hx_printf("Can't update Main code due to no Bootloader(0x%02X)!\n", recevied_data[0]);
+						} else if (recevied_data[0] == FWUP_ERROR_NO_MAIN) {
+							hx_printf("Can't update Bootloader due to no Main code(0x%02X)!\n", recevied_data[0]);
+						}
+						hx_printf("polling for 0x%X, but result(0x%X) not expected!\n", cmd, recevied_data[0]);
+						lastError = recevied_data[0];
+						return -EIO;
+					}
+POLL_FAILED:
+					hx_printf("Polling for 0x%X timeout!\n", cmd);
+					lastError = FWUP_ERROR_POLLING_TIMEOUT;
+					return -EIO;
+				}
+				writeSize = fw_entry_table[i].unit_sz * 1024;
+				fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
+				outputTimes = writeSize / sz;
+				for (uint32_t i = 0; i < outputTimes; i++) {
+					hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
+					// if (hx_hid_set_output(HID_FW_UPDATE_ID, 1, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
+					if (hx_hid_set_feature(HID_FW_UPDATE_ID, hxfw->data + fwStartLoc + i * sz, sz) != 0) {
+						// cmd failed, go out
+						hx_printf("send firmware trunk: %d/%d of %d kb failed!\n", i + 1, outputTimes, writeSize);
+						lastError = FWUP_ERROR_FW_TRANSFER;
+						return -EIO;
+					}
+					usleep(100);
+				}
+				hx_printf("\n");
+			}
+			cmd = 0xB1;
+			if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 30,
+				 recevied_data, &nDataRecevied)) {
+				if (nDataRecevied > 0) {
+					hx_printf("polling for 0xB1, but result(0x%X) not expected!\n", recevied_data[0]);
+					if (recevied_data[0] == FWUP_ERROR_BL) {
+						hx_printf("Update failed\n");
+					} else if (recevied_data[0] == FWUP_ERROR_PW) {
+						hx_printf("Update failed, reason PW\n");
+					} else if (recevied_data[0] == FWUP_ERROR_ERASE_FLASH) {
+						hx_printf("Update failed, reason erase flash\n");
+					} else if (recevied_data[0] == FWUP_ERROR_FLASH_PROGRAMMING) {
+						hx_printf("Update failed, flash programming\n");
+					}
+					lastError = recevied_data[0];
+					return -EIO;
+				}
+				hx_printf("Polling for B1 timeout!\n");
+				lastError = FWUP_ERROR_POLLING_TIMEOUT;
+				return -EIO;
+			} else {
+				hx_printf("Update succeed!\n");
+				usleep(500 * 1000);
+				opt_data.options |= OPTION_REBIND;
+				dinfo.pid = opt_data.pid;
+				dinfo.vid = opt_data.vid;
+				lastError = FWUP_ERROR_NO_ERROR;
+			}
+		} else {
+			hx_printf("Version identical, update no go!\n");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	HXFW hxfw = {0};
+	int ret = 0;
 
 	if (himax_load_fw(opt_data.fw_path, &hxfw) != 0) {
 		ret = -ENODATA;
@@ -1890,173 +2550,41 @@ int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 		goto LOAD_FW_FAILED;
 	}
 
-	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
-			int sz = hx_hid_get_size_by_id(HID_FW_UPDATE_ID);
-			bool bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
-			if ((sz > 0) && bHandshakePresent) {
-				bool useFwInfoEntries = true;
-
-				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
-					fw_entries = calculateMappingEntries(oinfo.main_mapping, sizeof(oinfo.main_mapping));
-					if (fw_entries > 0) {
-						useFwInfoEntries = true;
-						fw_entry_table = oinfo.main_mapping;
-					}
-
-					bOinfoValid = true;
-				} else {
-					bOinfoValid = false;
-					useFwInfoEntries = false;
-				}
-
-				if (!useFwInfoEntries && bOinfoValid) {
-					for (size_t i = 0; i < sizeof(g_ic_main_code_mapping_table)/sizeof(hx_ic_fw_layout_mapping_t); i++) {
-						if (memcmp(g_ic_main_code_mapping_table[i].ic_sign_2, oinfo.ic_sign_2, sizeof(oinfo.ic_sign_2)) == 0) {
-							fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)g_ic_main_code_mapping_table[i].fw_table, sizeof(hx_hid_fw_unit_t)* 9);
-							fw_entry_table = (hx_hid_fw_unit_t *)g_ic_main_code_mapping_table[i].fw_table;
-							break;
-						}
-					}
-				}
-
-				if (!is_opt_set(&opt_data, OPTION_HID_FORCE_UPDATE)) {
-					if (bOinfoValid)
-						bGoUpdate = (himax_update_check(&hxfw, &oinfo) > 0)?true:false;
-					else
-						bGoUpdate = false;
-				} else {
-					if (fw_entries == 0) {
-						fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fw_main_121A, sizeof(hx_hid_fw_unit_t)* 9);
-						fw_entry_table = (hx_hid_fw_unit_t *)fw_main_121A;
-					}
-					bGoUpdate = true;
-				}
-
-				if (bGoUpdate && (fw_entries > 0)) {
-					uint8_t cmd = 0;
-
-					if(hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) == 0)
-						hx_printf("ID %02X read %02X\n", HID_FW_UPDATE_HANDSHAKING_ID, cmd);
-
-					unlock_flash(ACCESS_HID);
-
-					cmd = main_update_cmd;
-					if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) != 0) {
-						hx_printf("Initial HID FW update failed!\n");
-						lastError = FWUP_ERROR_INITIAL;
-						goto HID_FW_UPDATE_END;
-					} else {
-						hx_printf("Initializing HID FW update....\n");
-						usleep(100 * 1000);
-						unlock_flash(ACCESS_HID);
-					}
-					for (int i = 0; i < fw_entries; i++) {
-						start = time(NULL);
-
-POLL_AGAIN:
-						cmd = fw_entry_table[i].cmd;
-						if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
-							recevied_data, &nDataRecevied)) {
-							if (nDataRecevied > 0) {
-								if ((recevied_data[0] == FWUP_ERROR_MCU_A0)||(recevied_data[0] == FWUP_ERROR_MCU_00)) {
-									now = time(NULL);
-									if (now - start >= 7) {
-										lastError = recevied_data[0];
-										goto POLL_FAILED;
-									}
-									usleep(pollingInterval * 1000);
-									goto POLL_AGAIN;
-								} else if (recevied_data[0] == FWUP_ERROR_NO_BL) {
-									hx_printf("Can't update Main code due to no Bootloader(0x%02X)!\n", recevied_data[0]);
-								} else if (recevied_data[0] == FWUP_ERROR_NO_MAIN) {
-									hx_printf("Can't update Bootloader due to no Main code(0x%02X)!\n", recevied_data[0]);
-								}
-								hx_printf("polling for 0x%X, but result(0x%X) not expected!\n", cmd, recevied_data[0]);
-								lastError = recevied_data[0];
-								ret = -EIO;
-								goto HID_FW_UPDATE_END;
-							}
-POLL_FAILED:
-							hx_printf("Polling for 0x%X timeout!\n", cmd);
-							lastError = FWUP_ERROR_POLLING_TIMEOUT;
-							ret = -EIO;
-							goto HID_FW_UPDATE_END;
-						}
-
-						writeSize = fw_entry_table[i].unit_sz * 1024;
-						fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
-						outputTimes = writeSize / sz;
-						for (uint32_t i = 0; i < outputTimes; i++) {
-							hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
-							// if (hx_hid_set_output(HID_FW_UPDATE_ID, 1, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
-							if (hx_hid_set_feature(HID_FW_UPDATE_ID, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
-								// cmd failed, go out
-								hx_printf("send firmware trunk: %d/%d of %d kb failed!\n", i + 1, outputTimes, writeSize);
-								ret = -EIO;
-								lastError = FWUP_ERROR_FW_TRANSFER;
-								goto HID_FW_UPDATE_END;
-							}
-							usleep(100);
-						}
-						hx_printf("\n");
-					}
-					cmd = 0xB1;
-					if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 30,
-						 recevied_data, &nDataRecevied)) {
-						if (nDataRecevied > 0) {
-							hx_printf("polling for 0xB1, but result(0x%X) not expected!\n", recevied_data[0]);
-							if (recevied_data[0] == FWUP_ERROR_BL) {
-								hx_printf("Update failed\n");
-							} else if (recevied_data[0] == FWUP_ERROR_PW) {
-								hx_printf("Update failed, reason PW\n");
-							} else if (recevied_data[0] == FWUP_ERROR_ERASE_FLASH) {
-								hx_printf("Update failed, reason erase flash\n");
-							} else if (recevied_data[0] == FWUP_ERROR_FLASH_PROGRAMMING) {
-								hx_printf("Update failed, flash programming\n");
-							}
-							lastError = recevied_data[0];
-
-							ret = -EIO;
-							goto HID_FW_UPDATE_END;
-						}
-						hx_printf("Polling for B1 timeout!\n");
-						lastError = FWUP_ERROR_POLLING_TIMEOUT;
-						ret = -EIO;
-						goto HID_FW_UPDATE_END;
-					} else {
-						hx_printf("Update succeed!\n");
-						ret = 0;
-						usleep(500 * 1000);
-						opt_data.options |= OPTION_REBIND;
-						dinfo.pid = opt_data.pid;
-						dinfo.vid = opt_data.vid;
-						lastError = FWUP_ERROR_NO_ERROR;
-					}
-				} else {
-					hx_printf("Version identical, update no go!\n");
-					ret = 1;
-				}
-			}
-		}
-	} else {
-		himax_free_fw(&hxfw);
-		lastError = FWUP_ERROR_NO_DEVICE;
-		return -ENODEV;
+	ret = hx_scan_open_hidraw(opt_data);
+	if (ret != 0) {
+		printf("Failed to open hidraw device!\n");
+		goto HID_PREPARE_FAILED;
 	}
-HID_FW_UPDATE_END:
+
+	ret = hx_hid_parse_RD_for_idsz(opt_data);
+	if (ret != 0) {
+		printf("Failed to parse hidraw RD for id and size!\n");
+		hx_hid_close();
+		goto HID_PREPARE_FAILED;
+	}
+
+	ret = hid_update_fw_info(opt_data);
+	if (ret != 0) {
+		printf("Failed to get FW info before update!\n");
+	}
+
+	ret = hid_core_update_logic(&hxfw, opt_data, dinfo, UPDATE_CMD_MAIN, opt_data.hid_info.main_mapping, sizeof(opt_data.hid_info.main_mapping),
+								g_ic_main_code_mapping_table, sizeof(g_ic_main_code_mapping_table), lastError);
+
 	hx_hid_close();
+HID_PREPARE_FAILED:
 	himax_free_fw(&hxfw);
 LOAD_FW_FAILED:
+
 	return ret;
 }
 
-int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+/*
+int hid_bl_update_logic(HXFW *hxfw, OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 {
 	hx_hid_info oinfo;
 	bool bOinfoValid = false;
 	bool bGoUpdate = false;
-	HXFW hxfw;
 	time_t start, now;
 	uint8_t recevied_data[2] = {0};
 	int nDataRecevied = 0;
@@ -2065,10 +2593,140 @@ int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 	uint32_t fwStartLoc;
 	uint32_t outputTimes;
 	const uint8_t bl_update_cmd = 0x77;
-	int ret = 0;
 	int fw_entries = 0;
 	hx_hid_fw_unit_t* fw_entry_table = NULL;
 	lastError = FWUP_ERROR_NO_ERROR;
+
+	int sz = hx_hid_get_size_by_id(HID_FW_UPDATE_ID);
+	bool bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
+	if ((sz > 0) && bHandshakePresent) {
+		bGoUpdate = true;
+		bool useFwInfoEntries = true;
+		if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
+			fw_entries = calculateMappingEntries(&oinfo.bl_mapping, sizeof(oinfo.bl_mapping));
+			if (fw_entries > 0) {
+				useFwInfoEntries = true;
+				fw_entry_table = &oinfo.bl_mapping;
+			}
+			bOinfoValid = true;
+		} else {
+			bOinfoValid = false;
+			useFwInfoEntries = false;
+		}
+		if (!useFwInfoEntries && bOinfoValid) {
+			for (size_t i = 0; i < sizeof(g_ic_bl_code_mapping_table)/sizeof(hx_ic_fw_layout_mapping_t); i++) {
+				if (memcmp(g_ic_bl_code_mapping_table[i].ic_sign_2, oinfo.ic_sign_2, sizeof(oinfo.ic_sign_2)) == 0) {
+					fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)g_ic_bl_code_mapping_table[i].fw_table, sizeof(hx_hid_fw_unit_t)* 1);
+					fw_entry_table = (hx_hid_fw_unit_t *)g_ic_bl_code_mapping_table[i].fw_table;
+					break;
+				}
+			}
+		}
+		if (fw_entries == 0) {
+			fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fw_bl_121A, sizeof(hx_hid_fw_unit_t)* 1);
+			fw_entry_table = (hx_hid_fw_unit_t *)fw_bl_121A;
+		}
+		if (bGoUpdate) {
+			uint8_t cmd = 0;
+			if(hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) == 0)
+				hx_printf("ID %02X read %02X\n", HID_FW_UPDATE_HANDSHAKING_ID, cmd);
+			unlock_flash(ACCESS_HID);
+			cmd = bl_update_cmd;
+			if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) != 0) {
+				hx_printf("Initial HID FW update failed!\n");
+				lastError = FWUP_ERROR_INITIAL;
+				return -EIO;
+			} else {
+				hx_printf("Initializing HID FW update....\n");
+				// usleep(1500 * 1000);
+				usleep(100 * 1000);
+				unlock_flash(ACCESS_HID);
+			}
+			for (int i = 0; i < fw_entries; i++) {
+				start = time(NULL);
+
+POLL_BL_AGAIN:
+				cmd = fw_entry_table[i].cmd;
+				if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
+					recevied_data, &nDataRecevied)) {
+					if (nDataRecevied > 0) {
+						if ((recevied_data[0] == FWUP_ERROR_MCU_A0)||(recevied_data[0] == FWUP_ERROR_MCU_00)) {
+							now = time(NULL);
+							if (now - start >= 7) {
+								lastError = recevied_data[0];
+								goto POLL_BL_FAILED;
+							}
+							usleep(pollingInterval * 1000);
+							goto POLL_BL_AGAIN;
+						} else if (recevied_data[0] == FWUP_ERROR_NO_BL) {
+							hx_printf("Can't update Main code due to no Bootloader(0x%02X)!\n", recevied_data[0]);
+						} else if (recevied_data[0] == FWUP_ERROR_NO_MAIN) {
+							hx_printf("Can't update Bootloader due to no Main code(0x%02X)!\n", recevied_data[0]);
+						}
+						hx_printf("polling for 0x%X, but result(0x%X) not expected!\n", cmd, recevied_data[0]);
+						lastError = recevied_data[0];
+						return -EIO;
+					}
+POLL_BL_FAILED:
+					hx_printf("Polling for 0x%X timeout!\n", cmd);
+					lastError = FWUP_ERROR_POLLING_TIMEOUT;
+					return -EIO;
+				}
+				writeSize = fw_entry_table[i].unit_sz * 1024;
+				fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
+				outputTimes = writeSize / sz;
+				for (uint32_t i = 0; i < outputTimes; i++) {
+					hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
+					// if (hx_hid_set_output(HID_FW_UPDATE_ID, 1, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
+					if (hx_hid_set_feature(HID_FW_UPDATE_ID, hxfw->data + fwStartLoc + i * sz, sz) != 0) {
+						// cmd failed, go out
+						hx_printf("send firmware trunk: %d/%d of %d kb failed!\n", i + 1, outputTimes, writeSize);
+						lastError = FWUP_ERROR_FW_TRANSFER;
+						return -EIO;
+					}
+					usleep(100);
+				}
+				hx_printf("\n");
+			}
+			cmd = 0xB1;
+			if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 30,
+				 recevied_data, &nDataRecevied)) {
+				if (nDataRecevied > 0) {
+					hx_printf("polling for 0xB1, but result(0x%X) not expected!\n", recevied_data[0]);
+					if (recevied_data[0] == FWUP_ERROR_BL) {
+						hx_printf("Update failed\n");
+					} else if (recevied_data[0] == FWUP_ERROR_PW) {
+						hx_printf("Update failed, wrong PW\n");
+					} else if (recevied_data[0] == FWUP_ERROR_ERASE_FLASH) {
+						hx_printf("Update failed, erase flash\n");
+					} else if (recevied_data[0] == FWUP_ERROR_FLASH_PROGRAMMING) {
+						hx_printf("Update failed, flash programming\n");
+					}
+					lastError = recevied_data[0];
+					return -EIO;
+				}
+				hx_printf("Polling for B1 timeout!\n");
+				lastError = FWUP_ERROR_POLLING_TIMEOUT;
+				return -EIO;
+			} else {
+				hx_printf("Bootloader update succeed!\n");
+				usleep(500 * 1000);
+				opt_data.options |= OPTION_REBIND;
+				dinfo.pid = opt_data.pid;
+				dinfo.vid = opt_data.vid;
+				lastError = FWUP_ERROR_NO_ERROR;
+			}
+		}
+	}
+
+	return 0;
+}
+*/
+
+int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	HXFW hxfw = {0};
+	int ret = 0;
 
 	if (himax_load_fw(opt_data.fw_path, &hxfw) != 0) {
 		ret = -ENODATA;
@@ -2076,152 +2734,145 @@ int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 		goto LOAD_FW_FAILED;
 	}
 
-	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
-			int sz = hx_hid_get_size_by_id(HID_FW_UPDATE_ID);
-			bool bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
-			if ((sz > 0) && bHandshakePresent) {
-				bGoUpdate = true;
-				bool useFwInfoEntries = true;
-
-				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0) {
-					fw_entries = calculateMappingEntries(&oinfo.bl_mapping, sizeof(oinfo.bl_mapping));
-					if (fw_entries > 0) {
-						useFwInfoEntries = true;
-						fw_entry_table = &oinfo.bl_mapping;
-					}
-
-					bOinfoValid = true;
-				} else {
-					bOinfoValid = false;
-					useFwInfoEntries = false;
-				}
-
-				if (!useFwInfoEntries && bOinfoValid) {
-					for (size_t i = 0; i < sizeof(g_ic_bl_code_mapping_table)/sizeof(hx_ic_fw_layout_mapping_t); i++) {
-						if (memcmp(g_ic_bl_code_mapping_table[i].ic_sign_2, oinfo.ic_sign_2, sizeof(oinfo.ic_sign_2)) == 0) {
-							fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)g_ic_bl_code_mapping_table[i].fw_table, sizeof(hx_hid_fw_unit_t)* 1);
-							fw_entry_table = (hx_hid_fw_unit_t *)g_ic_bl_code_mapping_table[i].fw_table;
-							break;
-						}
-					}
-				}
-
-				if (fw_entries == 0) {
-					fw_entries = calculateMappingEntries((hx_hid_fw_unit_t *)fw_bl_121A, sizeof(hx_hid_fw_unit_t)* 1);
-					fw_entry_table = (hx_hid_fw_unit_t *)fw_bl_121A;
-				}
-
-				if (bGoUpdate) {
-					uint8_t cmd = 0;
-
-					if(hx_hid_get_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) == 0)
-						hx_printf("ID %02X read %02X\n", HID_FW_UPDATE_HANDSHAKING_ID, cmd);
-
-					unlock_flash(ACCESS_HID);
-
-					cmd = bl_update_cmd;
-					if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1) != 0) {
-						hx_printf("Initial HID FW update failed!\n");
-						lastError = FWUP_ERROR_INITIAL;
-						goto HID_BL_UPDATE_END;
-					} else {
-						hx_printf("Initializing HID FW update....\n");
-						// usleep(1500 * 1000);
-						usleep(100 * 1000);
-						unlock_flash(ACCESS_HID);
-					}
-					for (int i = 0; i < fw_entries; i++) {
-						start = time(NULL);
-
-POLL_BL_AGAIN:
-						cmd = fw_entry_table[i].cmd;
-						if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
-							recevied_data, &nDataRecevied)) {
-							if (nDataRecevied > 0) {
-								if ((recevied_data[0] == FWUP_ERROR_MCU_A0)||(recevied_data[0] == FWUP_ERROR_MCU_00)) {
-									now = time(NULL);
-									if (now - start >= 7) {
-										lastError = recevied_data[0];
-										goto POLL_BL_FAILED;
-									}
-									usleep(pollingInterval * 1000);
-									goto POLL_BL_AGAIN;
-								} else if (recevied_data[0] == FWUP_ERROR_NO_BL) {
-									hx_printf("Can't update Main code due to no Bootloader(0x%02X)!\n", recevied_data[0]);
-								} else if (recevied_data[0] == FWUP_ERROR_NO_MAIN) {
-									hx_printf("Can't update Bootloader due to no Main code(0x%02X)!\n", recevied_data[0]);
-								}
-								hx_printf("polling for 0x%X, but result(0x%X) not expected!\n", cmd, recevied_data[0]);
-								ret = -EIO;
-								lastError = recevied_data[0];
-								goto HID_BL_UPDATE_END;
-							}
-POLL_BL_FAILED:
-							hx_printf("Polling for 0x%X timeout!\n", cmd);
-							lastError = FWUP_ERROR_POLLING_TIMEOUT;
-							ret = -EIO;
-							goto HID_BL_UPDATE_END;
-						}
-
-						writeSize = fw_entry_table[i].unit_sz * 1024;
-						fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
-						outputTimes = writeSize / sz;
-						for (uint32_t i = 0; i < outputTimes; i++) {
-							hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
-							// if (hx_hid_set_output(HID_FW_UPDATE_ID, 1, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
-							if (hx_hid_set_feature(HID_FW_UPDATE_ID, hxfw.data + fwStartLoc + i * sz, sz) != 0) {
-								// cmd failed, go out
-								hx_printf("send firmware trunk: %d/%d of %d kb failed!\n", i + 1, outputTimes, writeSize);
-								ret = -EIO;
-								lastError = FWUP_ERROR_FW_TRANSFER;
-								goto HID_BL_UPDATE_END;
-							}
-							usleep(100);
-						}
-						hx_printf("\n");
-					}
-					cmd = 0xB1;
-					if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 30,
-						 recevied_data, &nDataRecevied)) {
-						if (nDataRecevied > 0) {
-							hx_printf("polling for 0xB1, but result(0x%X) not expected!\n", recevied_data[0]);
-							if (recevied_data[0] == FWUP_ERROR_BL) {
-								hx_printf("Update failed\n");
-							} else if (recevied_data[0] == FWUP_ERROR_PW) {
-								hx_printf("Update failed, wrong PW\n");
-							} else if (recevied_data[0] == FWUP_ERROR_ERASE_FLASH) {
-								hx_printf("Update failed, erase flash\n");
-							} else if (recevied_data[0] == FWUP_ERROR_FLASH_PROGRAMMING) {
-								hx_printf("Update failed, flash programming\n");
-							}
-							lastError = recevied_data[0];
-							ret = -EIO;
-							goto HID_BL_UPDATE_END;
-						}
-						hx_printf("Polling for B1 timeout!\n");
-						lastError = FWUP_ERROR_POLLING_TIMEOUT;
-						ret = -EIO;
-						goto HID_BL_UPDATE_END;
-					} else {
-						hx_printf("Bootloader update succeed!\n");
-						ret = 0;
-						usleep(500 * 1000);
-						opt_data.options |= OPTION_REBIND;
-						dinfo.pid = opt_data.pid;
-						dinfo.vid = opt_data.vid;
-						lastError = FWUP_ERROR_NO_ERROR;
-					}
-				}
-			}
-		}
-	} else {
-		himax_free_fw(&hxfw);
-		lastError = FWUP_ERROR_NO_DEVICE;
-		return -ENODEV;
+	ret = hx_scan_open_hidraw(opt_data);
+	if (ret != 0) {
+		printf("Failed to open hidraw device!\n");
+		goto HID_PREPARE_FAILED;
 	}
-HID_BL_UPDATE_END:
+
+	ret = hx_hid_parse_RD_for_idsz(opt_data);
+	if (ret != 0) {
+		printf("Failed to parse hidraw RD for id and size!\n");
+		hx_hid_close();
+		goto HID_PREPARE_FAILED;
+	}
+
+	ret = hid_update_fw_info(opt_data);
+	if (ret != 0) {
+		printf("Failed to get FW info before update!\n");
+	}
+
+	ret = hid_core_update_logic(&hxfw, opt_data, dinfo, UPDATE_CMD_BL, &opt_data.hid_info.bl_mapping, sizeof(opt_data.hid_info.bl_mapping),
+								g_ic_bl_code_mapping_table, sizeof(g_ic_bl_code_mapping_table), lastError);
+
 	hx_hid_close();
+HID_PREPARE_FAILED:
+	himax_free_fw(&hxfw);
+LOAD_FW_FAILED:
+
+	return ret;
+}
+
+int hid_dd_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	HXFW hxfw = {0};
+	int ret = 0;
+
+	if (himax_load_fw(opt_data.fw_path, &hxfw) != 0) {
+		ret = -ENODATA;
+		lastError = FWUP_ERROR_LOAD_FW_BIN;
+		goto LOAD_FW_FAILED;
+	}
+
+	ret = hx_scan_open_hidraw(opt_data);
+	if (ret != 0) {
+		printf("Failed to open hidraw device!\n");
+		goto HID_PREPARE_FAILED;
+	}
+
+	ret = hx_hid_parse_RD_for_idsz(opt_data);
+	if (ret != 0) {
+		printf("Failed to parse hidraw RD for id and size!\n");
+		hx_hid_close();
+		goto HID_PREPARE_FAILED;
+	}
+
+	ret = hid_update_fw_info(opt_data);
+	if (ret != 0) {
+		printf("Failed to get FW info before update!\n");
+	}
+
+	if (opt_data.is_hid_info_valid) {
+		if (opt_data.hid_info.display_mapping.cmd != 0xAD) {
+			printf("No display mapping in FW layout, can't continue update!\n");
+			lastError = FWUP_ERROR_FW_INFO_INVALID;
+			hx_hid_close();
+			goto HID_PREPARE_FAILED;
+		} else if (opt_data.hid_info.display_mapping.unit_sz * 1024 != hxfw.len) {
+			printf("Display rom size in firmware info is different from actual firmware size, can't continue update!\n");
+			lastError = FWUP_ERROR_FW_SIZE_MISMATCH;
+			hx_hid_close();
+			goto HID_PREPARE_FAILED;
+		}
+	}
+
+	ret = hid_core_update_logic(&hxfw, opt_data, dinfo, UPDATE_CMD_DD, &opt_data.hid_info.display_mapping, sizeof(opt_data.hid_info.display_mapping),
+								NULL, 0, lastError);
+
+	hx_hid_close();
+HID_PREPARE_FAILED:
+	himax_free_fw(&hxfw);
+LOAD_FW_FAILED:
+
+	return ret;
+}
+
+int hid_fw_update_logic(HXFW *hxfw, OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	int ret;
+
+	ret = hid_core_update_logic(hxfw, opt_data, dinfo, UPDATE_CMD_MAIN, opt_data.hid_info.main_mapping, sizeof(opt_data.hid_info.main_mapping),
+								g_ic_main_code_mapping_table, sizeof(g_ic_main_code_mapping_table), lastError);
+	if (ret == 0) {
+		usleep(100 * 1000);
+		ret = hid_core_update_logic(hxfw, opt_data, dinfo, UPDATE_CMD_BL, &opt_data.hid_info.bl_mapping, sizeof(opt_data.hid_info.bl_mapping),
+									g_ic_bl_code_mapping_table, sizeof(g_ic_bl_code_mapping_table), lastError);
+		if (ret < 0) {
+			printf("BL code update failed after Main update!\n");
+		} else if (ret > 0) {
+			printf("Main code version identical, no need to update!\n");
+			ret = 0;
+		} else {
+			printf("BL code update succeed after Main update!\n");
+			ret = 0;
+		}
+	} else if (lastError == FWUP_ERROR_NO_BL) {
+		printf("No Bootloader found(Main ok), try to update Bootloader first!\n");
+		ret = hid_core_update_logic(hxfw, opt_data, dinfo, UPDATE_CMD_BL, &opt_data.hid_info.bl_mapping, sizeof(opt_data.hid_info.bl_mapping),
+									g_ic_bl_code_mapping_table, sizeof(g_ic_bl_code_mapping_table), lastError);
+		if (ret < 0) {
+			printf("Bootloader update failed! Update main is risky, aborting!\n");
+			return ret;
+		}
+		// ret = hid_main_update_logic(hxfw, opt_data, dinfo, lastError);
+		ret = hid_core_update_logic(hxfw, opt_data, dinfo, UPDATE_CMD_MAIN, opt_data.hid_info.main_mapping, sizeof(opt_data.hid_info.main_mapping),
+									g_ic_main_code_mapping_table, sizeof(g_ic_main_code_mapping_table), lastError);
+		if (ret < 0) {
+			printf("Main code update failed!\n");
+		} else if (ret > 0) {
+			printf("Main code version identical, no need to update!\n");
+			ret = 0;
+		} else {
+			printf("Main code update succeed!\n");
+			ret = 0;
+		}
+	}
+
+	return ret;
+}
+
+int hid_fw_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
+{
+	HXFW hxfw = {0};
+	int ret = 0;
+
+	if (himax_load_fw(opt_data.fw_path, &hxfw) != 0) {
+		ret = -ENODATA;
+		lastError = FWUP_ERROR_LOAD_FW_BIN;
+		goto LOAD_FW_FAILED;
+	}
+	ret = hid_fw_update_logic(&hxfw, opt_data, dinfo, lastError);
+
 	himax_free_fw(&hxfw);
 
 LOAD_FW_FAILED:
@@ -2427,6 +3078,7 @@ static int hx_hid_parse_criteria_file(OPTDATA& opt_data, hx_criteria_t** result,
 	const int max_tx_count = 128;
 	char line[8 * max_rx_count + 256] = {0};
 	char *tok = NULL;
+	char *endptr;
 	bool keyword_match;
 	unsigned int current_idx;
 	// int tok_idx;
@@ -2462,7 +3114,8 @@ START_KEYWORD_MATCH:
 						tok = strtok(NULL, ",");
 						if (tok != NULL) {
 							// tok_idx++;
-							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].default_value)) > 0) {
+							hx_criteria_table[current_idx].default_value = strtoul(tok, &endptr, 0);
+							if (errno == 0 && endptr != tok && *endptr == '\0') {
 								hx_criteria_table[current_idx].activated = true;
 							} else {
 								hx_printf("Reading 1 parameter failed!\n");
@@ -2483,8 +3136,8 @@ START_KEYWORD_MATCH:
 						rx_cnt = 0;
 						while (tok != NULL) {
 							// tok_idx++;
-
-							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
+							hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count] = strtoul(tok, &endptr, 0);
+							if (errno == 0 && endptr != tok && *endptr == '\0') {
 								hx_criteria_table[current_idx].param_count++;
 								rx_cnt++;
 							}
@@ -2515,15 +3168,16 @@ START_KEYWORD_MATCH:
 								continue;
 							// tok_idx = 0;
 							// rx_cnt = 0;
-							if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
+							hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count] = strtoul(tok, &endptr, 0);
+							if (errno == 0 && endptr != tok && *endptr == '\0') {
 								hx_criteria_table[current_idx].param_count++;
 								rx_cnt++;
 
 								tok = strtok(NULL, ",");
 								while (tok != NULL) {
 									// tok_idx++;
-
-									if (sscanf(tok, "%d", &(hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count])) > 0) {
+									hx_criteria_table[current_idx].param_data[hx_criteria_table[current_idx].param_count] = strtoul(tok, &endptr, 0);
+									if (errno == 0 && endptr != tok && *endptr == '\0') {
 										hx_criteria_table[current_idx].param_count++;
 										rx_cnt++;
 									}
@@ -2597,20 +3251,107 @@ void log(FILE *fp, const char *fmt, ...)
 	va_end(ap);
 }
 
-int place_frame_in_full_map(uint16_t *full_map, uint16_t *frame, int full_rx, int full_tx,
-	int frame_pos_rx, int frame_pos_tx, int rx_num, int tx_num)
+enum layout_type_t get_layout_type(hx_hid_ic_layout_header *layout)
 {
-	if ((frame_pos_rx + rx_num) > full_rx) {
-		hx_printf("Error : frame_pos_rx(%d) + rx_num(%d) > full_rx(%d)\n", frame_pos_rx, rx_num, full_rx);
+	if (layout->ic_tx_rx[0].desc.layout.rx_num == layout->total_tx_rx.desc.layout.rx_num &&
+		layout->ic_tx_rx[0].desc.layout.tx_num == layout->total_tx_rx.desc.layout.tx_num) {
+		hx_printf("SINGLE panel layout detected!\n");
+		return SINGLE;
+	}
+
+	if (layout->ic_tx_rx[0].desc.layout.rx_num == layout->total_tx_rx.desc.layout.rx_num) {
+		hx_printf("DIMENSION_1D_TX panel layout detected!\n");
+		return DIMENSION_1D_TX;
+	}
+
+	if (layout->ic_tx_rx[0].desc.layout.tx_num == layout->total_tx_rx.desc.layout.tx_num) {
+		hx_printf("DIMENSION_1D_RX panel layout detected!\n");
+		return DIMENSION_1D_RX;
+	}
+
+	hx_printf("DIMENSION_2D panel layout detected!\n");
+	return DIMENSION_2D;
+}
+
+
+int place_frame_in_full_map(uint16_t *full_map, uint16_t *frame, int frame_pos_rx, int frame_pos_tx,
+							enum layout_type_t ltype, hx_hid_ic_layout_header *layout)
+{
+	uint full_map_pos_x;
+	uint full_map_pos_y;
+	uint origin_x = layout->ic_direction.desc.data[0];
+	uint origin_y = layout->ic_direction.desc.data[1];
+	uint ic_idx = 0;
+	uint acc_rx_num = 0, acc_tx_num = 0;
+	uint cur_rx_num = 0, cur_tx_num = 0;
+	uint full_rx = layout->total_tx_rx.desc.layout.rx_num;
+	uint full_tx = layout->total_tx_rx.desc.layout.tx_num;
+
+	if (ltype == DIMENSION_1D_RX) {
+		ic_idx = frame_pos_rx;
+		for (uint i = 0; i < ic_idx; i++) {
+			acc_rx_num += layout->ic_tx_rx[i].desc.layout.rx_num;
+		}
+		cur_rx_num = layout->ic_tx_rx[ic_idx].desc.layout.rx_num;
+		cur_tx_num = layout->ic_tx_rx[ic_idx].desc.layout.tx_num;
+	} else if (ltype == DIMENSION_1D_TX) {
+		ic_idx = frame_pos_tx;
+		for (uint i = 0; i < ic_idx; i++) {
+			acc_tx_num += layout->ic_tx_rx[i].desc.layout.tx_num;
+		}
+		cur_tx_num = layout->ic_tx_rx[ic_idx].desc.layout.tx_num;
+		cur_rx_num = layout->ic_tx_rx[ic_idx].desc.layout.rx_num;
+	} else if (ltype == DIMENSION_2D) {
+		hx_printf("Error : 2D layout not supported in current version!\n");
+		return -1;
+	} else if (ltype == SINGLE) {
+		acc_rx_num = 0;
+		acc_tx_num = 0;
+		cur_rx_num = layout->ic_tx_rx[0].desc.layout.rx_num;
+		cur_tx_num = layout->ic_tx_rx[0].desc.layout.tx_num;
+	} else {
+		hx_printf("Error : invalid layout type(%d)\n", ltype);
 		return -1;
 	}
-	if ((frame_pos_tx + tx_num) > full_tx) {
-		hx_printf("Error : frame_pos_tx(%d) + tx_num(%d) > full_tx(%d)\n", frame_pos_tx, tx_num, full_tx);
+
+	if ((acc_rx_num + cur_rx_num) > full_rx) {
+		hx_printf("Error : frame_pos_rx(%d) + rx_num(%d) > full_rx(%d)\n", frame_pos_rx, cur_rx_num, full_rx);
 		return -1;
 	}
-	for (int i = 0; i < tx_num; i++)
-		memcpy(full_map + frame_pos_tx * full_rx + i * full_rx + frame_pos_rx,
-		frame + i * rx_num, rx_num * sizeof(uint16_t));
+	if ((acc_tx_num + cur_tx_num) > full_tx) {
+		hx_printf("Error : frame_pos_tx(%d) + tx_num(%d) > full_tx(%d)\n", frame_pos_tx, cur_tx_num, full_tx);
+		return -1;
+	}
+	// origin type: 0,0 => right-bottom
+	//              0,1 => right-top
+	//              1,0 => left-bottom
+	//              1,1 => left-top
+	switch (origin_x) {
+		case 0:
+			full_map_pos_x = acc_rx_num;
+			break;
+		case 1:
+			full_map_pos_x = full_rx - (acc_rx_num + cur_rx_num);
+			break;
+		default:
+			hx_printf("Error : origin_x(%d) invalid\n", origin_x);
+			return -1;
+	}
+	switch (origin_y) {
+		case 0:
+			full_map_pos_y = acc_tx_num;
+			break;
+		case 1:
+			full_map_pos_y = full_tx - (acc_tx_num + cur_tx_num);
+			break;
+		default:
+			hx_printf("Error : origin_y(%d) invalid\n", origin_y);
+			return -1;
+	}
+	for (uint i = 0; i < cur_tx_num; i++)
+		memcpy(full_map + full_map_pos_y * full_rx + i * full_rx + full_map_pos_x,
+		frame + i * cur_rx_num,
+		cur_rx_num * sizeof(uint16_t));
 
 	return 0;
 }
@@ -2683,29 +3424,139 @@ bool compare_result(uint8_t *frame_data, hid_self_test_support_item_t *test_item
 	return test_item->testResult;
 }
 
-bool compare_result_with_fixed_bounds(uint8_t *frame_data, hid_self_test_support_item_t *test_item,
-	int32_t upperBond, int32_t lowerBond, bool signed_data,	unsigned int rx_num, unsigned int tx_num)
+void print_full_map(uint8_t *frame_data, uint full_rx, uint full_tx, bool signed_data, uint16_t rotate, FILE *fp)
 {
+	// Print full map, with rotation if degree is 90/180/270
+	uint out_rx = full_rx;
+	uint out_tx = full_tx;
+	uint16_t deg = rotate % 360;
 	union { int32_t i; uint16_t s[2]; } usdata;
 
+	if (deg == 90 || deg == 270) {
+		out_rx = full_tx;
+		out_tx = full_rx;
+	}
+
 	hx_printf("\nFull map:\n");
+	log(fp, "\nFull map:\n");
 	hx_printf("       ");
+	log(fp, "       ");
+	for (uint j = 0; j < out_rx; j++) {
+		switch (deg) {
+		case 0:
+			hx_printf(" RX[%02d]", j + 1);
+			log(fp, " RX[%02d]", j + 1);
+			break;
+		case 90:
+			hx_printf(" TX[%02d]", out_rx - j);
+			log(fp, " TX[%02d]", out_rx - j);
+			break;
+		case 180:
+			hx_printf(" RX[%02d]", out_rx - j);
+			log(fp, " RX[%02d]", out_rx - j);
+			break;
+		case 270:
+			hx_printf(" TX[%02d]", j + 1);
+			log(fp, " TX[%02d]", j + 1);
+			break;
+		}
+	}
+
+	for (uint y = 0; y < out_tx; y++) {
+		switch (deg) {
+		case 0:
+			hx_printf("\nTX[%02d]:", y + 1);
+			log(fp, "\nTX[%02d]:", y + 1);
+			break;
+		case 90:
+			hx_printf("\nRX[%02d]:", y + 1);
+			log(fp, "\nRX[%02d]:", y + 1);
+			break;
+		case 180:
+			hx_printf("\nTX[%02d]:", out_tx - y);
+			log(fp, "\nTX[%02d]:", out_tx - y);
+			break;
+		case 270:
+			hx_printf("\nRX[%02d]:", out_tx - y);
+			log(fp, "\nRX[%02d]:", out_tx - y);
+			break;
+		}
+
+		for (uint x = 0; x < out_rx; x++) {
+			uint src_rx = x;
+			uint src_tx = y;
+
+			switch (deg) {
+			case 0:
+				break;
+			case 90:
+				src_rx = y;
+				src_tx = full_tx - 1 - x;
+				break;
+			case 180:
+				src_rx = full_rx - 1 - x;
+				src_tx = full_tx - 1 - y;
+				break;
+			case 270:
+				src_rx = full_rx - 1 - y;
+				src_tx = x;
+				break;
+			default:
+				src_rx = x;
+				src_tx = y;
+				break;
+			}
+
+			uint idx = (src_tx * full_rx + src_rx) * 2;
+			// int32_t v = (int16_t)frame_data[idx] + (((int16_t)frame_data[idx + 1]) << 8);
+			// if (!signed_data)
+				// v = (uint16_t)v;
+			usdata.i =
+			(int16_t)frame_data[idx] + (((int16_t)frame_data[idx + 1]) << 8);
+			if (signed_data)
+				usdata.i = *(int16_t *)&(usdata.s[0]);
+
+			hx_printf(" %6d", usdata.i);
+			log(fp, " %6d", usdata.i);
+		}
+	}
+
+	hx_printf("\n");
+	log(fp, "\n");
+}
+
+bool compare_result_with_fixed_bounds(uint8_t *frame_data, hid_self_test_support_item_t *test_item,
+	int32_t upperBond, int32_t lowerBond, bool signed_data,	unsigned int rx_num, unsigned int tx_num,
+	uint16_t rotate, FILE *fp)
+{
+	union { int32_t i; uint16_t s[2]; } usdata;
+#if 0
+	hx_printf("\nFull map:\n");
+	log(fp, "\nFull map:\n");
+	hx_printf("       ");
+	log(fp, "       ");
 	for(uint j = 0; j < rx_num; j++) {
 		hx_printf(" RX[%02d]", j + 1);
+		log(fp, " RX[%02d]", j + 1);
 	}
 	for (uint j = 0; j < (rx_num * tx_num); j++) {
 		if ((j % rx_num) == 0) {
 			hx_printf("\nTX[%02d]:", j/rx_num + 1);
+			log(fp, "\nTX[%02d]:", j/rx_num + 1);
 		}
 		usdata.i =
 			(int16_t)frame_data[j * 2] + (((int16_t)frame_data[j * 2 + 1]) << 8);
-		if (test_item->hid_switch == HID_SELF_TEST_NOISE)
+		if (test_item->hid_switch == HID_SELF_TEST_NOISE || signed_data)
 			usdata.i = *(int16_t *)&(usdata.s[0]);
 
 		hx_printf(" %6d", usdata.i);
+		log(fp, " %6d", usdata.i);
 	}
 	hx_printf("\n");
-
+	log(fp, "\n");
+#else
+	print_full_map(frame_data, rx_num, tx_num, test_item->hid_switch == HID_SELF_TEST_NOISE || signed_data, rotate, fp);
+#endif
 	test_item->testResult = true;
 	for (unsigned int j = 0; j < rx_num * tx_num; j++) {
 		usdata.i =
@@ -2737,14 +3588,12 @@ bool compare_result_with_fixed_bounds(uint8_t *frame_data, hid_self_test_support
 	return test_item->testResult;
 }
 
-bool get_raw_data(uint8_t *frame_data, uint32_t frame_sz, uint16_t type,
+bool get_raw_data(uint32_t single_frame_sz, uint16_t type,
 	bool signed_data, bool polling_for_ready, uint32_t self_test_id_sz,
-	uint8_t *full_data,	uint rx_ic_num, uint tx_ic_num, uint rx_num, uint tx_num,
+	uint8_t *full_data,	hx_hid_ic_layout_header *ic_layout, enum layout_type_t ltype,
 	bool rx_rev, bool tx_rev, int retry_limit, bool bPrintData, FILE *fp)
 {
-	int retry_cnt = 0;
 	int poll_cnt = 0;
-	uint correct_frames = 0;
 	int ret;
 	union { uint32_t i; uint8_t b[4]; } cmd;
 	union { uint32_t i; uint8_t b[4]; } recv;
@@ -2754,18 +3603,39 @@ bool get_raw_data(uint8_t *frame_data, uint32_t frame_sz, uint16_t type,
 	int nDataRecv = 0;
 	uint8_t lastState;
 	int debug_start_loc;
+	int retry_cnt = 0;
+	uint correct_frames = 0;
+	uint8_t *frame_buffer = NULL;
+	uint8_t *frame_ptr;
+	uint rx_ic_num, tx_ic_num, full_rx_num, full_tx_num;
+	uint current_rx_num, current_tx_num;
+	uint acc_rx_num, acc_tx_num;
 
+	rx_ic_num = ic_layout->total_tx_rx_ic_num.desc.layout.rx_num;
+	tx_ic_num = ic_layout->total_tx_rx_ic_num.desc.layout.tx_num;
+	full_rx_num = ic_layout->total_tx_rx.desc.layout.rx_num;
+	full_tx_num = ic_layout->total_tx_rx.desc.layout.tx_num;
+	// hx_printf("%s: rx_ic_num = %d, tx_ic_num = %d, rx_num = %d, tx_num = %d\n", __func__, rx_ic_num, tx_ic_num, rx_num, tx_num);
+	// hx_printf("%s: single_frame_sz = %d, id size: %d\n", __func__, single_frame_sz, self_test_id_sz);
+	frame_buffer = (uint8_t *)malloc(rx_ic_num * tx_ic_num * single_frame_sz);
+	if (frame_buffer == NULL) {
+		hx_printf("Memory insufficient!\n");
+		return false;
+	}
+	frame_ptr = frame_buffer;
 	for (unsigned int tra_rx_ic = 0; tra_rx_ic < rx_ic_num; tra_rx_ic++) {
 		for (unsigned int tra_tx_ic = 0; tra_tx_ic < tx_ic_num; tra_tx_ic++) {
 			retry_cnt = 0;
 RESTART_ALL_PROC:
 			if (tra_rx_ic != 0 || tra_tx_ic != 0) {
-				cmd.i = (tra_tx_ic << 20) | tra_rx_ic << 16 | type;
+				cmd.i = (tra_tx_ic << 20) | (tra_rx_ic << 16) | type;
+				// cmd.i = (tra_rx_ic << 20) | (tra_tx_ic << 16) | type;
 				ret = hx_hid_set_feature(HID_TOUCH_MONITOR_SEL_ID, cmd.b, sizeof(cmd.b));
 				if (ret < 0) {
 					retry_cnt++;
 					if (retry_cnt >= retry_limit) {
 						hx_printf("Set feature failed!\n");
+						free(frame_buffer);
 						return false;
 					}
 					goto RESTART_ALL_PROC;
@@ -2775,6 +3645,7 @@ RESTART_ALL_PROC:
 RESTART_POLL_PROC:
 					if (poll_cnt >= retry_limit) {
 						hx_printf("Polling for 0xFF timeout!\n");
+						free(frame_buffer);
 						return false;
 					}
 					nDataRecv = 0;
@@ -2844,10 +3715,12 @@ RESTART_POLL_PROC:
 									hx_printf("self test undefined error(%02X)!\n", recv.b[0]);
 									log(fp, "self test undefined error(%02X)!\n", recv.b[0]);
 								};
+								free(frame_buffer);
 								return false;
 							} else {
 								hx_printf("self test return undefined value!(0x%02X)\n", recv.b[0]);
 								log(fp, "self test return undefined value!(0x%02X)\n", recv.b[0]);
+								free(frame_buffer);
 								return false;
 							}
 						}
@@ -2862,86 +3735,113 @@ RESTART_POLL_PROC:
 			retry_cnt = 0;
 			while (retry_cnt++ < retry_limit) {
 				if (retry_cnt > 1)
-					usleep(10 * 1000);
+					usleep(19 * 1000);
 
-				ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame_data, frame_sz);
-				if ((ret == 0) && (frame_data[1] == 0x5A) && (frame_data[2] == 0xA5)) {
-					correct_frames++;
-					if (bPrintData) {
-						hx_printf("       ");
-						for(uint j = 0; j < rx_num; j++) {
-							hx_printf(" RX[%02d]", j + 1);
-							log(fp, " RX[%02d]", j + 1);
-						}
-						for (uint j = 0; j < (rx_num * tx_num); j++) {
-							if ((j % rx_num) == 0) {
-								hx_printf("\nTX[%02d]:", j/rx_num + 1);
-								log(fp, "\nTX[%02d]:", j/rx_num + 1);
-							}
-							usdata.i =
-								(int16_t)frame_data[header + j * 2] + (((int16_t)frame_data[header + j * 2 + 1]) << 8);
-							if (signed_data)
-								usdata.i = *(int16_t *)&(usdata.s[0]);
-
-							hx_printf(" %6d", usdata.i);
-							log(fp, " %6d", usdata.i);
-						}
-
-						debug_start_loc = header + (rx_num * tx_num) * 2;
-						for (uint j = 0; j < (rx_num + tx_num); j++) {
-							if ((j % rx_num) == 0) {
-								hx_printf("\n DEBUG:");
-								log(fp, "\n DEBUG:");
-							}
-							hx_printf(" %6d", ((int16_t)frame_data[debug_start_loc + j * 2]) + (((int16_t)frame_data[debug_start_loc + j * 2 + 1]) << 8));
-							log(fp, " %6d", ((int16_t)frame_data[debug_start_loc + j * 2]) + (((int16_t)frame_data[debug_start_loc + j * 2 + 1]) << 8));
-						}
-						hx_printf("\n");
-						log(fp, "\n");
-					}
-					if (place_frame_in_full_map((uint16_t *)full_data, (uint16_t *)(frame_data + header), rx_ic_num * rx_num,
-						tx_ic_num * tx_num, tra_rx_ic * rx_num, tra_tx_ic * tx_num, rx_num, tx_num) != 0) {
+				ret = hx_hid_get_feature(HID_TOUCH_MONITOR_ID, frame_ptr, single_frame_sz);
+				if ((ret == 0) && (frame_ptr[1] == 0x5A) && (frame_ptr[2] == 0xA5)) {
+					if (place_frame_in_full_map((uint16_t *)full_data, (uint16_t *)(frame_ptr + header),
+						tra_rx_ic, tra_tx_ic, ltype, ic_layout) != 0) {
 						hx_printf("place frame in full map failed!\n");
 						log(fp, "place frame in full map failed!\n");
+						free(frame_buffer);
 						return false;
 					}
+					correct_frames++;
+					frame_ptr += single_frame_sz;
 					break;
 				}
 			}
 		}
 	}
 
+	if (bPrintData) {
+		frame_ptr = frame_buffer;
+		acc_rx_num = 0;
+		acc_tx_num = 0;
+		for (uint i = 0; i < correct_frames; i++, frame_ptr += single_frame_sz) {
+			// hx_printf("Header: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n", frame_ptr[0], frame_ptr[1], frame_ptr[2], frame_ptr[3], frame_ptr[4]);
+			current_rx_num = ic_layout->ic_tx_rx[i].desc.layout.rx_num;
+			current_tx_num = ic_layout->ic_tx_rx[i].desc.layout.tx_num;
+			hx_printf("Current Ic RX: %d, TX: %d\n", current_rx_num, current_tx_num);
+			hx_printf("       ");
+			log(fp, "       ");
+			for(uint j = acc_rx_num; j < (current_rx_num + acc_rx_num); j++) {
+				hx_printf(" RX[%02d]", j + 1);
+				log(fp, " RX[%02d]", j + 1);
+			}
+			for (uint j = 0; j < (current_rx_num * current_tx_num); j++) {
+				if ((j % current_rx_num) == 0) {
+					hx_printf("\nTX[%02d]:", j/current_rx_num + 1 + acc_tx_num);
+					log(fp, "\nTX[%02d]:", j/current_rx_num + 1 + acc_tx_num);
+				}
+				usdata.i =
+					(int16_t)frame_ptr[header + j * 2] + (((int16_t)frame_ptr[header + j * 2 + 1]) << 8);
+				if (signed_data)
+					usdata.i = *(int16_t *)&(usdata.s[0]);
+				hx_printf(" %6d", usdata.i);
+				log(fp, " %6d", usdata.i);
+			}
+
+			debug_start_loc = header + (current_rx_num * current_tx_num) * 2;
+			for (uint j = 0; j < (current_rx_num + current_tx_num); j++) {
+				if ((j % current_rx_num) == 0) {
+					hx_printf("\n DEBUG:");
+					log(fp, "\n DEBUG:");
+				}
+				hx_printf(" %6d", ((int16_t)frame_ptr[debug_start_loc + j * 2]) + (((int16_t)frame_ptr[debug_start_loc + j * 2 + 1]) << 8));
+				log(fp, " %6d", ((int16_t)frame_ptr[debug_start_loc + j * 2]) + (((int16_t)frame_ptr[debug_start_loc + j * 2 + 1]) << 8));
+			}
+			hx_printf("\n");
+			log(fp, "\n");
+			switch (ltype) {
+			case DIMENSION_1D_RX:
+				acc_rx_num += current_rx_num;
+				break;
+			case DIMENSION_1D_TX:
+				acc_tx_num += current_tx_num;
+				break;
+			default:
+				// SINGLE is the same, and 2D is not supported in current version
+				break;
+			};
+		}
+	}
+
 	if (correct_frames == rx_ic_num * tx_ic_num) {
 		if (rx_rev) {
-			uint16_t *tmp = (uint16_t *)malloc(rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			uint16_t *tmp = (uint16_t *)malloc(full_rx_num * full_tx_num * 2);
 			if (tmp == NULL) {
 				hx_printf("RX Reverse failed, Memory insufficient!\n");
+				free(frame_buffer);
 				return false;
 			}
-			for (uint i = 0; i < tx_num * tx_ic_num; i++) {
-				for (uint j = 0; j < rx_num * rx_ic_num; j++) {
-					tmp[i * rx_num * rx_ic_num + j] = ((uint16_t *)full_data)[(i + 1) * rx_num * rx_ic_num - j - 1];
+			for (uint i = 0; i < full_tx_num; i++) {
+				for (uint j = 0; j < full_rx_num; j++) {
+					tmp[i * full_rx_num + j] = ((uint16_t *)full_data)[(i + 1) * full_rx_num - j - 1];
 				}
 			}
-			memcpy(full_data, tmp, rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			memcpy(full_data, tmp, full_rx_num * full_tx_num * 2);
 			free(tmp);
 		}
 		if (tx_rev) {
-			uint16_t *tmp = (uint16_t *)malloc(rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			uint16_t *tmp = (uint16_t *)malloc(full_rx_num * full_tx_num * 2);
 			if (tmp == NULL) {
 				hx_printf("TX Reverse failed, Memory insufficient!\n");
+				free(frame_buffer);
 				return false;
 			}
-			for (uint i = 0; i < rx_num * rx_ic_num; i++) {
-				for (uint j = 0; j < tx_num * tx_ic_num; j++) {
-					tmp[j * rx_num * rx_ic_num + i] = ((uint16_t *)full_data)[(tx_num * tx_ic_num - j - 1) * rx_num * rx_ic_num + i];
+			for (uint i = 0; i < full_rx_num; i++) {
+				for (uint j = 0; j < full_tx_num; j++) {
+					tmp[j * full_rx_num + i] = ((uint16_t *)full_data)[(full_tx_num - j - 1) * full_rx_num + i];
 				}
 			}
-			memcpy(full_data, tmp, rx_num * tx_num * rx_ic_num * tx_ic_num * 2);
+			memcpy(full_data, tmp, full_rx_num * full_tx_num * 2);
 			free(tmp);
 		}
+		free(frame_buffer);
 		return true;
 	} else {
+		free(frame_buffer);
 		return false;
 	}
 }
@@ -2995,7 +3895,6 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 			.testResult = false,
 		}
 	};
-	hx_hid_info info;
 	int ret = 0;
 	const uint32_t pollingInterval = 100;
 	hx_criteria_t *hx_criteria_table = NULL;
@@ -3028,24 +3927,30 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 	struct timeval tv;
 	FILE *fp = NULL;
 	bool overall_result = true;
-	uint tx_ic_num;
-	uint rx_ic_num;
+	uint tx_ic_num = 1;
+	uint rx_ic_num = 1;
 	uint32_t stage_limit = 10;
+	hx_hid_ic_layout_header *layout_info = NULL;
 
-	is_output_file = is_opt_set(&opt_data, OPTION_HID_CRITERIA_OUTPUT_PATH);
+	is_output_file = is_opt_set(&opt_data, OPTION_OUTPUT_PATH);
 	gettimeofday(&tv, NULL);
 	if (hx_hid_parse_criteria_file(opt_data, &hx_criteria_table, &nKeyword) == 0) {
 		if (hx_scan_open_hidraw(opt_data) == 0) {
-			if (hx_hid_parse_RD_for_idsz() == 0) {
-				if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
-					rx_num = info.rx;
-					tx_num = info.tx;
-					tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
-					rx_ic_num = (info.ic_num & 0x0F) + 1;
+			if (hx_hid_parse_RD_for_idsz(opt_data) == 0) {
+				ret = hid_update_fw_info(opt_data);
+				if (ret == 0) {
+					if (opt_data.hid_layout_info == 0) {
+						hx_printf("IC layout error!\n");
+						return -ENOMEM;
+					}
+					rx_num = opt_data.hid_layout_info->total_tx_rx.desc.layout.rx_num;
+					tx_num = opt_data.hid_layout_info->total_tx_rx.desc.layout.tx_num;
+					tx_ic_num = opt_data.hid_layout_info->total_tx_rx_ic_num.desc.layout.tx_num;
+					rx_ic_num = opt_data.hid_layout_info->total_tx_rx_ic_num.desc.layout.rx_num;
 
 					frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
 					if (frame_sz > 0) {
-						total_sz = frame_sz + rx_num * tx_num * rx_ic_num * tx_ic_num * 2;
+						total_sz = rx_num * tx_num * 2;
 						frame = (uint8_t *)malloc(total_sz);
 						if (frame == NULL) {
 							ret = -ENOMEM;
@@ -3064,7 +3969,7 @@ int hid_self_test_by_criteria_file(OPTDATA& opt_data)
 									dtime->tm_year+1900, dtime->tm_mon+1, dtime->tm_mday, dtime->tm_hour,
 									dtime->tm_min, dtime->tm_sec, (int)(tv.tv_usec/1000));
 								snprintf(tmp_output_pathname, sizeof(tmp_output_pathname), "%s/%s%s",
-									opt_data.criteria_output_path, "hx_mp_test_log_", fname_only);
+									opt_data.output_path, "hx_mp_test_log_", fname_only);
 								fp = fopen(tmp_output_pathname, "w");
 							}
 
@@ -3249,14 +4154,14 @@ SW_MODE_RETRY_START:
 									}
 
 									// hx_printf("Start to get raw data for compare....\n");
-									if (get_raw_data(frame, frame_sz, 0, test_items[i].hid_switch == HID_SELF_TEST_NOISE,
-										true, stSz,	frame + frame_sz, rx_ic_num, tx_ic_num, rx_num, tx_num,
+									if (get_raw_data(frame_sz, 0, test_items[i].hid_switch == HID_SELF_TEST_NOISE,
+										true, stSz,	frame, opt_data.hid_layout_info, opt_data.hid_layout_type,
 										is_opt_set(&opt_data, OPTION_HID_RX_REVERSE),
 										is_opt_set(&opt_data, OPTION_HID_TX_REVERSE),
 										retry_limit, true, fp)) {
-										compare_result(frame + frame_sz, &test_items[i], bUpperBondFound,
-											upperBond_data, bLowerBondFound, lowerBond_data, rx_num * rx_ic_num,
-											tx_num * tx_ic_num);
+										compare_result(frame, &test_items[i], bUpperBondFound,
+											upperBond_data, bLowerBondFound, lowerBond_data, opt_data.hid_layout_info->total_tx_rx.desc.layout.rx_num,
+											opt_data.hid_layout_info->total_tx_rx.desc.layout.tx_num);
 										hx_printf("Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
 										log(fp, "Test Item : %s, result %s!\n", test_items[i].name, test_items[i].testResult?"Succeed":"Failed");
 										if (!test_items[i].testResult) {
@@ -3306,7 +4211,7 @@ NEXT_ITEM:
 				if (fp != NULL) {
 					fclose(fp);
 					snprintf(final_output_pathname, sizeof(final_output_pathname), "%s/%s_%s%s",
-						opt_data.criteria_output_path, overall_result?"PASS":"FAIL","hx_mp_test_log_", fname_only);
+						opt_data.output_path, overall_result?"PASS":"FAIL","hx_mp_test_log_", fname_only);
 					if (rename(tmp_output_pathname, final_output_pathname) == 0)
 						hx_printf("Log file saved to %s\n", final_output_pathname);
 					else
@@ -3318,6 +4223,7 @@ NEXT_ITEM:
 			}
 
 CRITERIA_NO_MEM_FAILED:
+			free(layout_info);
 			free(frame);
 			free(cmd);
 			free(recv);
@@ -3342,7 +4248,6 @@ CRITERIA_NO_MEM_FAILED:
 
 int hid_show_diag(OPTDATA& opt_data)
 {
-	hx_hid_info info;
 	int ret = 0;
 	bool bSelfTestCompleted = false;
 	const uint32_t pollingInterval = 100;
@@ -3357,8 +4262,10 @@ int hid_show_diag(OPTDATA& opt_data)
 	int total_sz;
 	int rx_num;
 	int tx_num;
-	int tx_ic_num;
-	int rx_ic_num;
+	int tx_ic_num = 1;
+	int rx_ic_num = 1;
+	int total_rx_num;
+	int total_tx_num;
 	bool signed_data = false;
 	hid_self_test_support_item_t test_item = {
 		.name = "Custom",
@@ -3367,18 +4274,44 @@ int hid_show_diag(OPTDATA& opt_data)
 		.testResult = false,
 		.activated = true,
 	};
+	time_t t = time(NULL);
+	struct tm *dtime = localtime(&t);
+	struct timeval tv;
+	FILE *fp = NULL;
+	char fname_only[128] = {0};
+	char tmp_output_pathname[1024] = {0};
+	bool is_output_file = is_opt_set(&opt_data, OPTION_OUTPUT_PATH);
+
+	if (is_output_file) {
+		gettimeofday(&tv, NULL);
+		snprintf(fname_only, sizeof(fname_only), "%d%02d%02d%02d%02d%02d%03d.txt",
+				 dtime->tm_year+1900, dtime->tm_mon+1, dtime->tm_mday, dtime->tm_hour,
+				 dtime->tm_min, dtime->tm_sec, (int)(tv.tv_usec/1000));
+		snprintf(tmp_output_pathname, sizeof(tmp_output_pathname), "%s/%s%s",
+				 opt_data.output_path, "hx_raw_log_", fname_only);
+		fp = fopen(tmp_output_pathname, "w");
+	}
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
-			if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
-				rx_num = info.rx;
-				tx_num = info.tx;
-				tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
-				rx_ic_num = (info.ic_num & 0x0F) + 1;
+		if (hx_hid_parse_RD_for_idsz(opt_data) == 0) {
+			ret = hid_update_fw_info(opt_data);
+			if (ret == 0) {
+				rx_num = opt_data.hid_info.rx;
+				tx_num = opt_data.hid_info.tx;
+				total_rx_num = rx_num * rx_ic_num;
+				total_tx_num = tx_num * tx_ic_num;
+				// tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
+				// rx_ic_num = (info.ic_num & 0x0F) + 1;
+				if (opt_data.hid_layout_info != 0) {
+					tx_ic_num = opt_data.hid_layout_info->total_tx_rx_ic_num.desc.layout.tx_num;
+					rx_ic_num = opt_data.hid_layout_info->total_tx_rx_ic_num.desc.layout.rx_num;
+					total_rx_num = opt_data.hid_layout_info->total_tx_rx.desc.layout.rx_num;
+					total_tx_num = opt_data.hid_layout_info->total_tx_rx.desc.layout.tx_num;
+				}
 
 				frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
 				if (frame_sz > 0) {
-					total_sz = frame_sz + rx_num * tx_num * rx_ic_num * tx_ic_num * 2;
+					total_sz = /*frame_sz +*/ total_rx_num * total_tx_num * 2;
 					frame = (uint8_t *)malloc(total_sz);
 					if (frame == NULL) {
 						ret = -ENOMEM;
@@ -3397,6 +4330,7 @@ int hid_show_diag(OPTDATA& opt_data)
 									if (recv == NULL) {
 										ret = -ENOMEM;
 										free(frame);
+										free(cmd);
 										goto DIAG_FUNC_END;
 									}
 									nDataRecv = 0;
@@ -3419,6 +4353,7 @@ POLL_AGAIN:
 								free(cmd);
 							} else {
 								ret = -ENOMEM;
+								free(cmd);
 								free(frame);
 								goto DIAG_FUNC_END;
 							}
@@ -3437,12 +4372,19 @@ POLL_AGAIN:
 					if ((bSelfTestCompleted && (opt_data.param.i == 0x22)) ||
 						is_opt_set(&opt_data, OPTION_HID_PARTIAL_DISPLAY_SIGNED))
 						signed_data = true;
-					if (get_raw_data(frame, frame_sz, opt_data.param.i, signed_data, false, stSz, frame + frame_sz,
-						rx_ic_num, tx_ic_num, rx_num, tx_num,
+					if (get_raw_data(frame_sz, opt_data.param.i, signed_data, false, stSz, frame,
+						opt_data.hid_layout_info, opt_data.hid_layout_type,
 						is_opt_set(&opt_data, OPTION_HID_RX_REVERSE), is_opt_set(&opt_data, OPTION_HID_TX_REVERSE),
-						retry_limit, true, NULL)) {
+						retry_limit, true, fp)) {
 						// bTestPass = compare_result(frame + frame_sz, &test_item, false, NULL, false, NULL, rx_num * rx_ic_num, tx_num * tx_ic_num);
-						bTestPass = compare_result_with_fixed_bounds(frame + frame_sz, &test_item, opt_data.self_test_spec_max, opt_data.self_test_spec_min, signed_data, rx_num * rx_ic_num, tx_num * tx_ic_num);
+						bTestPass = compare_result_with_fixed_bounds(frame, &test_item,
+																	 opt_data.self_test_spec_max,
+																	 opt_data.self_test_spec_min,
+																	 signed_data,
+																	 opt_data.hid_layout_info->total_tx_rx.desc.layout.rx_num,
+																	 opt_data.hid_layout_info->total_tx_rx.desc.layout.tx_num,
+																	 opt_data.rotate_degree,
+																	 fp);
 					} else {
 						hx_printf("Failed to get data\n");
 					}
@@ -3478,10 +4420,14 @@ POLL_AGAIN:
 			ret = -ENODATA;
 		}
 	} else {
+		if(fp)
+			fclose(fp);
 		return -ENODEV;
 	}
 
 DIAG_FUNC_END:
+	if(fp)
+		fclose(fp);
 	hx_hid_close();
 
 	return ret;
@@ -3489,7 +4435,6 @@ DIAG_FUNC_END:
 
 int hid_show_specify_diag(OPTDATA& opt_data)
 {
-	hx_hid_info info;
 	const unsigned int header = 5;
 	int ret = 0;
 	bool bSelfTestCompleted = false;
@@ -3514,10 +4459,10 @@ int hid_show_specify_diag(OPTDATA& opt_data)
 	int tx_num;
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
-			if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) == 0) {
-				rx_num = info.rx;
-				tx_num = info.tx;
+		if (hx_hid_parse_RD_for_idsz(opt_data) == 0) {
+			if (hid_update_fw_info(opt_data) == 0) {
+				rx_num = opt_data.hid_info.rx;
+				tx_num = opt_data.hid_info.tx;
 
 				frame_sz = hx_hid_get_size_by_id(HID_TOUCH_MONITOR_ID);
 				if (frame_sz > 0) {
@@ -3669,10 +4614,7 @@ int hid_set_input_RD_en(OPTDATA& opt_data, DEVINFO& dinfo)
 	uint8_t read_back[4] = {0};
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
-			// if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&oinfo, 255) == 0)
-				// hx_printf("got dev info\n");
-
+		if (hx_hid_parse_RD_for_idsz(opt_data) == 0) {
 			int sz = hx_hid_get_size_by_id(HID_INPUT_RD_EN_ID);
 			if (sz > 0) {
 				ret = hx_hid_get_feature(HID_INPUT_RD_EN_ID, read_back, sz);
@@ -3738,7 +4680,7 @@ int hid_update_DEVINFO(DEVINFO& oinfo)
 	} else {
 		do {
 			memset(hidraw_path, 0, sizeof(hidraw_path));
-			sprintf(hidraw_path, "%s/hidraw%d", dev_dir, dev_no);
+			snprintf(hidraw_path, sizeof(hidraw_path), "%s/hidraw%d", dev_dir, dev_no);
 
 			if (access(hidraw_path, F_OK) != 0) {
 				hx_printf("f%s device node not exist!\n", hidraw_path);
@@ -3789,10 +4731,10 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 {
 	int ret = 0;
 	int partial_data_sz = 0;
+	unsigned int buffer_sz = 0;
 	bool display_data = false;
 	int save_fd = -1;
 	uint8_t *partial_data = NULL;
-	hx_hid_info info;
 	int total_sz = 0;
 	int full_cycle = 0;
 	uint16_t value;
@@ -3803,7 +4745,7 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 		return -EIO;
 	}
 
-	if (hx_hid_parse_RD_for_idsz() < 0) {
+	if (hx_hid_parse_RD_for_idsz(optdata) < 0) {
 		ret = -EFAULT;
 		goto SETUP_FAILED;
 	}
@@ -3815,45 +4757,46 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 		goto SETUP_FAILED;
 	}
 
-	if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) != 0) {
+	if (hid_update_fw_info(optdata) != 0) {
 		hx_printf("Get HID_CFG_ID failed!\n");
 		ret = -EFAULT;
 		goto SETUP_FAILED;
 	}
-	total_sz = ((int)info.rx * (int)info.tx + (int)info.rx + (int)info.tx) * 2;
+	total_sz = ((int)optdata.hid_info.rx * (int)optdata.hid_info.tx + (int)optdata.hid_info.rx + (int)optdata.hid_info.tx) * 2;
 
-	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_SAVE_FILE)) {
-		save_fd = open(optdata.partial_save_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (is_opt_set(&optdata, OPTION_OUTPUT_PATH)) {
+		save_fd = open(optdata.output_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 		if (save_fd < 0) {
-			hx_printf("Open %s failed!\n", optdata.partial_save_file);
+			hx_printf("Open %s failed!\n", optdata.output_path);
 			ret = -EFAULT;
 			goto SETUP_FAILED;
 		}
 	}
 
-	partial_data = (uint8_t *)malloc(partial_data_sz);
+	partial_data = (uint8_t *)malloc((unsigned int)partial_data_sz);
 	if (partial_data == NULL) {
 		hx_printf("Allocate memory for partial data failed!\n");
 		ret = -ENOMEM;
 		goto ALLOCATE_FAILED;
 	}
 
-	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_DISPLAY) || is_opt_set(&optdata, OPTION_HID_PARTIAL_SAVE_FILE)) {
-		buffer = (char *)malloc(((partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1);
+	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_DISPLAY) || is_opt_set(&optdata, OPTION_OUTPUT_PATH)) {
+		buffer_sz = (((unsigned int)partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1;
+		buffer = (char *)malloc(buffer_sz);
 
 		if (buffer == NULL) {
 			hx_printf("Allocate memory for string buffer failed!\n");
 			ret = -ENOMEM;
 			goto ALLOCATE_BUF_FAILED;
 		}
-		stringLen = ((partial_data_sz - 1) / 2 - 2) * 7 + 50 + 1;
+		stringLen = buffer_sz;
 	}
 
 	if (is_opt_set(&optdata, OPTION_HID_PARTIAL_DISPLAY))
 		display_data = true;
 
-	full_cycle = total_sz / ((partial_data_sz - 1) / 2 - 2);
-	if ((total_sz % ((partial_data_sz - 1) / 2 - 2)) > 0)
+	full_cycle = total_sz / (((unsigned int)partial_data_sz - 1) / 2 - 2);
+	if ((total_sz % (((unsigned int)partial_data_sz - 1) / 2 - 2)) > 0)
 		full_cycle++;
 	hx_printf("total_sz = %d, partial_data_sz = %d, full_cycle = %d\n", total_sz, partial_data_sz, full_cycle);
 
@@ -3870,22 +4813,22 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 			usleep(100);
 			continue;
 		}
-		
+
 		if (buffer != NULL) {
-			memset(buffer, 0, stringLen);
+			memset(buffer, 0, buffer_sz);
 			stringLen = 0;
-			stringLen += sprintf(buffer + stringLen, "%02X (%02X %02X %02X %02X) : ", partial_data[0], partial_data[1], partial_data[2], partial_data[3], partial_data[4]);
-			for (int i = 5; i < partial_data_sz; i += 2) {
+			stringLen += snprintf(buffer + stringLen, buffer_sz - stringLen, "%02X (%02X %02X %02X %02X) : ", partial_data[0], partial_data[1], partial_data[2], partial_data[3], partial_data[4]);
+			for (unsigned int i = 5; i < (unsigned int)partial_data_sz; i += 2) {
 				value = (uint16_t)partial_data[i] | ((uint16_t)partial_data[i + 1] << 8);
-				stringLen += sprintf(buffer + stringLen, "%5d ", value);
+				stringLen += snprintf(buffer + stringLen, buffer_sz - stringLen, "%5d ", value);
 			}
-			stringLen += sprintf(buffer + stringLen, "\n");
+			stringLen += snprintf(buffer + stringLen, buffer_sz - stringLen, "\n");
 
 			if (display_data) {
 				hx_printf("%s", buffer);
 			}
 
-			if (save_fd > 0) {
+			if (save_fd >= 0) {
 				ret = (int)write(save_fd, buffer, strlen(buffer));
 				if (ret != (int)strlen(buffer)) {
 					hx_printf("Write partial data to file failed!\n");
@@ -3901,11 +4844,11 @@ int hid_polling_partial_data(OPTDATA& optdata, bool& loopEn)
 ALLOCATE_BUF_FAILED:
 	free(partial_data);
 ALLOCATE_FAILED:
-	if (save_fd > 0)
+	if (save_fd >= 0)
 		close(save_fd);
 SETUP_FAILED:
 	hx_hid_close();
-	
+
 	return ret;
 }
 
@@ -3920,7 +4863,7 @@ static void print_data(OPTDATA& opt_data, float *frame, int32_t rx_num, int32_t 
 			hx_printf("\nTX[%02d]:", i/rx_num + 1);
 
 		if (printInt)
-			hx_printf(" %6d", (int16_t)frame[i]);
+			hx_printf(" %6d", *(int16_t *)&frame[i]);
 		else
 			hx_printf(" %6.2f", frame[i]);
 	}
@@ -3981,7 +4924,6 @@ static float snr_cal(float signal, float noise)
 int hid_snr_calculation(OPTDATA& opt_data)
 {
 	int ret = 0;
-	hx_hid_info info;
 	int rx_num;
 	int tx_num;
 	int mutual_sz;
@@ -4008,8 +4950,6 @@ int hid_snr_calculation(OPTDATA& opt_data)
 	float max_avg_snr;
 	float avg_snr;
 	bool collected;
-	int32_t tx_ic_num;
-	int32_t rx_ic_num;
 	int total_sz;
 	int frame_sz;
 	int stSz;
@@ -4037,7 +4977,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 		return -EIO;
 	}
 
-	if (hx_hid_parse_RD_for_idsz() < 0) {
+	if (hx_hid_parse_RD_for_idsz(opt_data) < 0) {
 		ret = -EFAULT;
 		goto SETUP_FAILED;
 	}
@@ -4049,17 +4989,21 @@ int hid_snr_calculation(OPTDATA& opt_data)
 		goto SETUP_FAILED;
 	}
 
-	if (hx_hid_get_feature(HID_CFG_ID, (uint8_t *)&info, hx_hid_get_size_by_id(HID_CFG_ID)) != 0) {
+	if (hid_update_fw_info(opt_data) != 0) {
 		hx_printf("Get HID_CFG_ID failed!\n");
 		ret = -EFAULT;
 		goto SETUP_FAILED;
+	} else {
+		if (opt_data.hid_layout_info == 0) {
+			hx_printf("IC layout error!\n");
+			ret = -ENOMEM;
+			goto SETUP_FAILED;
+		}
+		rx_num = opt_data.hid_layout_info->total_tx_rx.desc.layout.rx_num;
+		tx_num = opt_data.hid_layout_info->total_tx_rx.desc.layout.tx_num;
 	}
 
-	tx_ic_num = ((info.ic_num & 0xF0) >> 4) + 1;
-	rx_ic_num = (info.ic_num & 0x0F) + 1;
-	rx_num = info.rx;
-	tx_num = info.tx;
-	mutual_sz = rx_num * tx_num * rx_ic_num * tx_ic_num;
+	mutual_sz = rx_num * tx_num;
 	if (mutual_sz <= 0) {
 		hx_printf("Mutual size is incorrect!\n");
 		ret = -EFAULT;
@@ -4107,7 +5051,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 		goto FORCE_ACTIVE_FAILED;
 	}
 
-	total_sz = frame_sz + rx_num * tx_num * rx_ic_num * tx_ic_num * 2;
+	total_sz = mutual_sz * 2;
 	frame = (uint8_t *)malloc(total_sz);
 	if (frame == NULL) {
 		hx_printf("Allocate memory for frame failed!\n");
@@ -4155,7 +5099,8 @@ int hid_snr_calculation(OPTDATA& opt_data)
 			break;
 		}
 
-		bret = get_raw_data(frame, frame_sz, HID_DIAG_RAW_DATA, true, false, stSz, frame + frame_sz, rx_ic_num, tx_ic_num, rx_num, tx_num,
+		bret = get_raw_data(frame_sz, HID_DIAG_RAW_DATA, true, false, stSz, frame, opt_data.hid_layout_info,
+			opt_data.hid_layout_type,
 			is_opt_set(&opt_data, OPTION_HID_RX_REVERSE),
 			is_opt_set(&opt_data, OPTION_HID_TX_REVERSE), retry_limit, true, NULL);
 		if (!bret) {
@@ -4164,7 +5109,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 		}
 		if (n_frames == (opt_data.snr_base_frames + opt_data.snr_ignore_frames + opt_data.snr_signal_noise_frames)) {
 			for (int i = 0; i < mutual_sz; i++) {
-				statistic_frames[un_touched_sd_frame * mutual_sz + i] = 
+				statistic_frames[un_touched_sd_frame * mutual_sz + i] =
 					statistic_frames[un_touched_sd_frame * mutual_sz + i] / opt_data.snr_signal_noise_frames;
 			}
 			hx_printf("Base frame calculated, un-touched statistic calculated, total get %d frames and ignore %d frames\n",
@@ -4208,7 +5153,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 			}
 			untouched_sd_max_avg += max;
 		} else if (n_frames >= (opt_data.snr_ignore_frames)) {
-			uint16_t *tmp_frame = (uint16_t *)(frame + frame_sz);
+			uint16_t *tmp_frame = (uint16_t *)(frame);
 			for (int i = 0; i < mutual_sz; i++) {
 				base_frame[i] += tmp_frame[i];
 			}
@@ -4229,8 +5174,8 @@ int hid_snr_calculation(OPTDATA& opt_data)
 				break;
 			}
 
-			bret = get_raw_data(frame, frame_sz, HID_DIAG_RAW_DATA, true, false, stSz, frame + frame_sz,
-				rx_ic_num, tx_ic_num, rx_num, tx_num,
+			bret = get_raw_data(frame_sz, HID_DIAG_RAW_DATA, true, false, stSz, frame,
+				opt_data.hid_layout_info, opt_data.hid_layout_type,
 				is_opt_set(&opt_data, OPTION_HID_RX_REVERSE), is_opt_set(&opt_data, OPTION_HID_TX_REVERSE),
 				retry_limit, true, NULL);
 			if (!bret) {
@@ -4246,7 +5191,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 				uint16_t *tmp_frame;
 				float tmp;
 				for (int i = 0; i < mutual_sz; i++) {
-					tmp_frame = (uint16_t *)(frame + frame_sz);
+					tmp_frame = (uint16_t *)(frame);
 					tmp = tmp_frame[i];
 					tmp = tmp - base_frame[i];
 
@@ -4318,7 +5263,7 @@ int hid_snr_calculation(OPTDATA& opt_data)
 				touched_signal_avg += local_avg / touched_block_count;
 			}
 			for (int i = 0; i < mutual_sz; i++) {
-				statistic_frames[touched_sd_frame * mutual_sz + i] = 
+				statistic_frames[touched_sd_frame * mutual_sz + i] =
 					statistic_frames[touched_sd_frame * mutual_sz + i] / opt_data.snr_signal_noise_frames;
 			}
 			touched_avg_max = touched_avg_max / opt_data.snr_signal_noise_frames;
@@ -4393,7 +5338,7 @@ int hid_himax_identify(OPTDATA& opt_data)
 	uint8_t temp[12] = {0};
 
 	if (hx_scan_open_hidraw(opt_data) == 0) {
-		if (hx_hid_parse_RD_for_idsz() == 0) {
+		if (hx_hid_parse_RD_for_idsz(opt_data) == 0) {
 			id_sz = hx_hid_get_size_by_id(HID_HIMAX_IDENT_ID);
 			if (id_sz > 0)
 				ret = hx_hid_get_feature(HID_HIMAX_IDENT_ID, temp, id_sz);

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef	__HX_DEF_H__
-#define	__HX_DEF_H__
+#ifndef	HX_DEF_H
+#define	HX_DEF_H
 
 /* since long is 4bytes on windows64, but is 8bytes on linux 64 */
 typedef unsigned char  uint8_t;
@@ -25,6 +25,8 @@ typedef signed char  int8_t;
 typedef signed short int16_t;
 typedef signed int   int32_t;
 
+#define HX_DEFAULT_I2C_ADDR 0x48
+#define HX_HID_DEFAULT_I2C_ADDR 0x4F
 
 enum or_option {
 	OPTION_CMP_VER = 1 << 0,
@@ -33,23 +35,24 @@ enum or_option {
 	OPTION_INFO = 1 << 3,
 	OPTION_FW_VER = 1 << 4,
 	OPTION_PID = 1 << 5,
-	OPTION_HID_FORCE_UPDATE = 1 << 6,
+	OPTION_FORCE_UPDATE = 1 << 6,
 	OPTION_HID_SET_DATA_TYPE = 1 << 7,
 	OPTION_HID_SHOW_REPORT = 1 << 8,
 	OPTION_HID_SELF_TEST = 1 << 9,
 	OPTION_HID_SELF_TEST_UPPER_BOUND = 1 << 10,
 	OPTION_HID_SELF_TEST_LOWER_BOUND = 1 << 11,
 	OPTION_HID_PARTIAL_DISPLAY = 1 << 12,
-	OPTION_HID_PARTIAL_SAVE_FILE = 1 << 13,
+	OPTION_OUTPUT_PATH = 1 << 13,
 	OPTION_HID_PARTIAL_DISPLAY_SIGNED = 1 << 14,
-	OPTION_HID_CRITERIA_OUTPUT_PATH = 1 << 15,
-	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 16,
-	OPTION_HID_SHOW_VERSION = 1 << 17,
-	OPTION_HID_TX_REVERSE = 1 << 18,
-	OPTION_HID_RX_REVERSE = 1 << 19,
+	OPTION_HID_SET_TOUCH_INPUT_RD_EN = 1 << 15,
+	OPTION_HID_SHOW_VERSION = 1 << 16,
+	OPTION_HID_TX_REVERSE = 1 << 17,
+	OPTION_HID_RX_REVERSE = 1 << 18,
+	OPTION_HID_I2C_ADDR = 1 << 19,
+	OPTION_HID_ROTATE_RESULT = 1 << 20,
 };
 
-const int mutual_shift_bit = 20;
+const int mutual_shift_bit = 21;
 
 enum mutual_option {
 	OPTION_NONE = ((1 << mutual_shift_bit) - 1),
@@ -57,20 +60,22 @@ enum mutual_option {
 	OPTION_READ_REG = (1 + 1) << mutual_shift_bit,
 	OPTION_WRITE_REG = (1 + 2) << mutual_shift_bit,
 	OPTION_STATUS = (1 + 3) << mutual_shift_bit,
-	OPTION_HID_MAIN_UPDATE = (1 + 4) << mutual_shift_bit,
-	OPTION_HID_BL_UPDATE = (1 + 5) << mutual_shift_bit,
-	OPTION_HID_ALL_UPDATE = (1 + 6) << mutual_shift_bit,
-	OPTION_HID_INFO = (1 + 7) << mutual_shift_bit,
-	OPTION_HID_READ_REG = (1 + 8) << mutual_shift_bit,
-	OPTION_HID_WRITE_REG = (1 + 9) << mutual_shift_bit,
-	OPTION_HID_SHOW_DIAG = (1 + 10) << mutual_shift_bit,
-	OPTION_HID_SELF_TEST_CRITERIA_FILE = (1 + 11) << mutual_shift_bit,
-	OPTION_HID_SHOW_PID_BY_HID_INFO = (1 + 12) << mutual_shift_bit,
-	OPTION_HID_SHOW_FW_VER_BY_HID_INFO = (1 + 13) << mutual_shift_bit,
-	OPTION_HID_PARTIAL_EN_POLLING_RATE = (1 + 14) << mutual_shift_bit,
-	OPTION_HID_SNR_CALCULATE = (1 + 15) << mutual_shift_bit,
-	OPTION_HID_SHOW_SPECIFY_DIAG = (1 + 16) << mutual_shift_bit,
-	OPTION_HID_HIMAX_IDENT = (1 + 17) << mutual_shift_bit,
+	OPTION_FW_INFO_DISPLAY = (1 + 4) << mutual_shift_bit,
+	OPTION_HID_MAIN_UPDATE = (1 + 5) << mutual_shift_bit,
+	OPTION_HID_BL_UPDATE = (1 + 6) << mutual_shift_bit,
+	OPTION_HID_DD_UPDATE = (1 + 7) << mutual_shift_bit,
+	OPTION_HID_ALL_UPDATE = (1 + 8) << mutual_shift_bit,
+	OPTION_HID_INFO = (1 + 9) << mutual_shift_bit,
+	OPTION_HID_READ_REG = (1 + 10) << mutual_shift_bit,
+	OPTION_HID_WRITE_REG = (1 + 11) << mutual_shift_bit,
+	OPTION_HID_SHOW_DIAG = (1 + 12) << mutual_shift_bit,
+	OPTION_HID_SELF_TEST_CRITERIA_FILE = (1 + 13) << mutual_shift_bit,
+	OPTION_HID_SHOW_PID_BY_HID_INFO = (1 + 14) << mutual_shift_bit,
+	OPTION_HID_SHOW_FW_VER_BY_HID_INFO = (1 + 15) << mutual_shift_bit,
+	OPTION_HID_PARTIAL_EN_POLLING_RATE = (1 + 16) << mutual_shift_bit,
+	OPTION_HID_SNR_CALCULATE = (1 + 17) << mutual_shift_bit,
+	OPTION_HID_SHOW_SPECIFY_DIAG = (1 + 18) << mutual_shift_bit,
+	OPTION_HID_HIMAX_IDENT = (1 + 19) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
@@ -82,8 +87,11 @@ enum mutual_option {
 #define HID_FW_UPDATE_ID				(0x0A)
 #define HID_FW_UPDATE_HANDSHAKING_ID	(0x0B)
 #define HID_SELF_TEST_ID				(0x0C)
-#define HID_INPUT_RD_EN_ID				(0x31)
+#define HID_INPUT_RD_EN_ID				(0x31) // deprecated, remove in future
 #define HID_HIMAX_IDENT_ID				(0xAA)
+#define HID_PT_EVENT_FORMAT_ID			(0xAB)
+#define HID_CMD_SIZE_ID                 (0xAC)
+#define HID_IC_LAYOUT_INFO_ID           (0xAE)
 
 #define HID_SELF_TEST_SHORT			(0x11)
 #define HID_SELF_TEST_OPEN			(0x12)
@@ -96,6 +104,103 @@ enum mutual_option {
 #define HID_DIAG_BASE_DATA			(0x0B)
 #define HID_DIAG_NORAML_DATA		(0x00)
 
+enum update_command {
+	UPDATE_CMD_MAIN = 0x55,
+	UPDATE_CMD_BL = 0x77,
+	UPDATE_CMD_DD = 0x66
+};
+
+extern "C" {
+
+typedef struct __attribute__((__packed__)) hx_hid_fw_unit {
+	uint8_t cmd;
+	uint16_t bin_start_offset;
+	uint16_t unit_sz;
+} hx_hid_fw_unit_t;
+
+typedef struct __attribute__((__packed__)) dd_init_cfg_info {
+	uint8_t header;
+	uint8_t config_version[3];
+} dd_init_cfg_info_t;
+
+typedef struct __attribute__((__packed__)) hx_hid_info_t {
+	hx_hid_fw_unit_t main_mapping[8];
+	hx_hid_fw_unit_t display_mapping;
+	hx_hid_fw_unit_t bl_mapping;
+	uint8_t passwd[2];
+	uint16_t cid;
+	uint8_t panel_ver;
+	uint16_t fw_ver;
+	uint8_t ic_sign;
+	char customer[12];
+	char project[12];
+	char fw_major[12];
+	char fw_minor[12];
+	char date[12];
+	char ic_sign_2[12];
+	uint16_t vid;
+	uint16_t pid;
+	uint8_t cfg_info[32];
+	// dd_init_cfg_info_t dd_cfg_info;
+	// uint8_t cfg_info[28];
+	uint8_t cfg_version;
+	uint8_t disp_version;
+	uint8_t rx;
+	uint8_t tx;
+	uint16_t yres;
+	uint16_t xres;
+	uint8_t pt_num;
+	uint8_t mkey_num;
+	uint8_t pen_num;
+	uint16_t pen_yres;
+	uint16_t pen_xres;
+	// uint8_t ltdi_ic_num;
+	uint8_t __reserved;
+	uint16_t flash_fw_size;
+	uint8_t debug_info[71];
+} hx_hid_info;
+
+enum ic_layout_desc_type {
+	IC_LAYOUT_DESC_TYPE_ALL_IC_NUM = 0xF0,
+	IC_LAYOUT_DESC_TYPE_IC_DIRECTION = 0xF1,
+	IC_LAYOUT_DESC_TYPE_TOTAL_TX_RX_IC_NUM = 0xF2,
+	IC_LAYOUT_DESC_TYPE_TOTAL_TX_RX = 0xF3,
+	IC_LAYOUT_DESC_TYPE_MASTER_TX_RX = 0xE0,
+	IC_LAYOUT_DESC_TYPE_SLAVE1_TX_RX = 0xE1,
+	IC_LAYOUT_DESC_TYPE_SLAVE2_TX_RX = 0xE2,
+	IC_LAYOUT_DESC_TYPE_SLAVE3_TX_RX = 0xE3,
+	IC_LAYOUT_DESC_TYPE_SLAVE4_TX_RX = 0xE4,
+	IC_LAYOUT_DESC_TYPE_SLAVE5_TX_RX = 0xE5,
+};
+
+typedef struct __attribute__((__packed__)) hx_ic_layout_desc_t {
+	uint8_t desc_type;
+	union {
+		struct __attribute__((__packed__)) {
+			uint8_t rx_num;
+			uint8_t tx_num;
+		} layout;
+		uint8_t data[2];
+	} desc;
+} hx_ic_layout_desc;
+
+typedef struct __attribute__((__packed__)) hx_hid_ic_layout_header_t {
+	// hx_ic_layout_desc header;
+	hx_ic_layout_desc all_ic_num;
+	hx_ic_layout_desc ic_direction;
+	hx_ic_layout_desc total_tx_rx_ic_num;
+	hx_ic_layout_desc total_tx_rx;
+	// hx_ic_layout_desc master_tx_rx;
+	hx_ic_layout_desc ic_tx_rx[];
+} hx_hid_ic_layout_header;
+
+enum layout_type_t {
+	SINGLE,
+	DIMENSION_1D_RX,
+	DIMENSION_1D_TX,
+	DIMENSION_2D
+};
+
 typedef	struct optdata {
 	uint32_t options;
 	char *fw_path;
@@ -104,6 +209,7 @@ typedef	struct optdata {
 	uint16_t vid;
 	uint16_t bus;
 	uint32_t w_addr_size;
+	uint32_t hid_i2c_addr;
 	union {
 		uint32_t i;
 		uint8_t b[4];
@@ -131,7 +237,7 @@ typedef	struct optdata {
 	int32_t self_test_spec_max;
 	int32_t self_test_spec_min;
 	char *criteria_path;
-	char *criteria_output_path;
+	char *output_path;
 
 	int32_t snr_param_cnt;
 	int32_t snr_ignore_frames;
@@ -142,56 +248,36 @@ typedef	struct optdata {
 	uint16_t ic_select;
 
 	uint32_t partial_en_polling_rate;
-	char *partial_save_file;
+
+	uint16_t rotate_degree;
+
+	hx_hid_info hid_info;
+	bool is_hid_info_valid;
+	hx_hid_ic_layout_header *hid_layout_info;
+	int32_t hid_layout_info_sz;
+	enum layout_type_t hid_layout_type;
 } OPTDATA;
 
 typedef struct hxfw {
 	uint8_t *data;
 	uint32_t len;
+	bool is_info_valid;
+	uint16_t cid;
+	uint16_t fw_ver;
+	uint8_t  tp_cfg_ver;
+	uint8_t  dd_cfg_ver;
+	uint16_t vid;
+	uint16_t pid;
+	char ic_sign_a;
+	char customer[13];
+	char project[13];
+	char ic_id[13];
 } HXFW;
 
 typedef struct devinfo {
 	uint32_t vid;
 	uint32_t pid;
 } DEVINFO;
-
-typedef struct __attribute__((__packed__)) hx_hid_fw_unit {
-	uint8_t cmd;
-	uint16_t bin_start_offset;
-	uint16_t unit_sz;
-} hx_hid_fw_unit_t;
-
-typedef struct __attribute__((__packed__)) hx_hid_info_t {
-	hx_hid_fw_unit_t main_mapping[9];
-	hx_hid_fw_unit_t bl_mapping;
-	uint8_t passwd[2];
-	uint8_t cid[2];
-	uint8_t panel_ver;
-	uint8_t fw_ver[2];
-	uint8_t ic_sign;
-	char customer[12];
-	char project[12];
-	char fw_major[12];
-	char fw_minor[12];
-	char date[12];
-	char ic_sign_2[12];
-	uint8_t vid[2];
-	uint8_t pid[2];
-	uint8_t cfg_info[32];
-	uint8_t cfg_version;
-	uint8_t disp_version;
-	uint8_t rx;
-	uint8_t tx;
-	uint16_t yres;
-	uint16_t xres;
-	uint8_t pt_num;
-	uint8_t mkey_num;
-	uint8_t pen_num;
-	uint16_t pen_yres;
-	uint16_t pen_xres;
-	uint8_t ic_num;// [7:4](tx_ic_num - 1) | [3:0](rx_ic_num - 1)
-	uint8_t debug_info[72];
-} hx_hid_info;
 
 typedef enum param_type {
 	ONE_PARAM = 1,
@@ -212,7 +298,9 @@ enum fw_update_error_code {
 	FWUP_ERROR_LOAD_FW_BIN = 0xFFFFFF01,
 	FWUP_ERROR_INITIAL = 0xFFFFFF02,
 	FWUP_ERROR_POLLING_TIMEOUT = 0xFFFFFF03,
-	FWUP_ERROR_FW_TRANSFER = 0xFFFFFF04
+	FWUP_ERROR_FW_TRANSFER = 0xFFFFFF04,
+	FWUP_ERROR_FW_INFO_INVALID = 0xFFFFFF05,
+	FWUP_ERROR_FW_SIZE_MISMATCH = 0xFFFFFF06
 };
 
 typedef struct hx_criteria_template {
@@ -229,7 +317,10 @@ typedef struct hx_criteria_template {
 typedef struct hx_ic_fw_layout_mapping {
 	const char ic_sign_2[12];
 	const hx_hid_fw_unit_t *fw_table;
+	const uint32_t table_sz;
 } hx_ic_fw_layout_mapping_t;
+
+}
 
 void hx_printf(const char *fmt, ...);
 
@@ -237,5 +328,7 @@ void hx_printf(const char *fmt, ...);
 #define IS_MUTUAL_OPTION_SET(opt, mutual_opt)	((opt & OPTION_MUTUAL_FILTER) == mutual_opt)
 
 bool is_opt_set(OPTDATA *opt_data, uint32_t option);
+
+extern int g_show_dbg_log;
 
 #endif

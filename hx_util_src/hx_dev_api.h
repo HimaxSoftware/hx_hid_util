@@ -17,20 +17,29 @@
 #ifndef	__HX_DEV_API_H__
 #define	__HX_DEV_API_H__
 
+int ahb_update_logic(HXFW *fw, DEVINFO *devp, OPTDATA *optp);
 int burn_firmware(DEVINFO *devp, OPTDATA *optp);
 int show_info(DEVINFO *devp, OPTDATA *optp);
 int show_status(OPTDATA *optp);
 int rebind_driver(DEVINFO *devp);
 int reg_read(OPTDATA& opt_data);
 int reg_write(OPTDATA& opt_data);
+int show_info_by_hid(DEVINFO& devp, OPTDATA& opt_data);
+int update_info_by_hid(DEVINFO& devp, OPTDATA& opt_data);
+int show_fw_info(OPTDATA& opt_data);
+bool himax_check_fw_header(HXFW *fw);
 
 int hid_update_DEVINFO(DEVINFO& oinfo);
 int hid_set_data_type(OPTDATA& opt_data);
 int hid_print_report_descriptor(OPTDATA& opt_data);
 int hid_main_update(OPTDATA& opt_data, DEVINFO& dinfo, int& errorCode);
 int hid_bl_update(OPTDATA& opt_data, DEVINFO& dinfo, int& errorCode);
+int hid_dd_update(OPTDATA& opt_data, DEVINFO& dinfo, int& errorCode);
+int hid_fw_update_logic(HXFW *hxfw, OPTDATA& opt_data, DEVINFO& dinfo, int& lastError);
+int hid_fw_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError);
 int hid_self_test_by_criteria_file(OPTDATA& opt_data);
 int hid_show_fw_info(OPTDATA& opt_data);
+int hid_update_fw_info(OPTDATA& opt_data);
 int hid_show_version(OPTDATA& opt_data);
 int hid_reg_write(OPTDATA& opt_data);
 int hid_reg_read(OPTDATA& opt_data);

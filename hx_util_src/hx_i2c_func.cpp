@@ -15,11 +15,10 @@
  */
 
 #include <stdio.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <unistd.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <errno.h>
@@ -30,8 +29,6 @@
 
 #define DEFAULT_I2C_BUS "/dev/i2c-13"
 #define HX_ACPI_NAME "i2c-HX"
-#define HX_I2C_ADDR 0x4F
-#define TARGET_I2C_ADDR 0x48
 
 #define MAX_DEV 16
 
@@ -53,23 +50,23 @@ int hx_scan_i2c_adaptor_path(int *adaptor_no)
 
 	adp_no = 0;
 	while (adp_no < MAX_DEV) {
-		sprintf(dev_path, "%s/i2c-%d", dev_sysfs_adapter_path, adp_no);
+		snprintf(dev_path, sizeof(dev_path), "%s/i2c-%d", dev_sysfs_adapter_path, adp_no);
 		d = opendir(dev_path);
 		if (d) {
 			char slave_dev[16];
-			strcpy(slave_dev, HX_ACPI_NAME);
+			snprintf(slave_dev, sizeof(slave_dev), "%s", HX_ACPI_NAME);
 
 			hx_printf("scan %s\n", dev_path);
 
-		//	sprintf(slave_dev, "%d-00%02X", adp_no, HX_I2C_ADDR);
+		//	snprintf(slave_dev, sizeof(slave_dev), "%d-00%02X", adp_no, HX_I2C_ADDR);
 			while ((dir = readdir(d)) != NULL) {
 				if (memcmp(dir->d_name, slave_dev, strlen(slave_dev)) == 0) {
 					found = 1;
 					break;
 				}
 			}
+			closedir(d);
 		}
-		closedir(d);
 
 		if (found)
 			break;
@@ -115,12 +112,12 @@ int	 hx_scan_i2c_device(char *devp)
 	int adaptor_no = -1;
 
 	if (devp != NULL) {
-		strcpy(g_dev_path, devp);
+		snprintf(g_dev_path, sizeof(g_dev_path), "%s", devp);
 		hx_printf("show i2c dev path %s\n", g_dev_path);
 		return 0;
 	}
 
-	strcpy(g_dev_path, DEFAULT_I2C_BUS);
+	snprintf(g_dev_path, sizeof(g_dev_path), "%s", DEFAULT_I2C_BUS);
 
 //	found = hx_scan_i2c_hid_path(&adaptor_no);
 
@@ -130,7 +127,7 @@ int	 hx_scan_i2c_device(char *devp)
 	if (!found) {
 		hx_printf("Use the default i2c-dev: %s\n", g_dev_path);
 	} else {
-		sprintf(g_dev_path, "/dev/i2c-%d", adaptor_no);
+		snprintf(g_dev_path, sizeof(g_dev_path), "/dev/i2c-%d", adaptor_no);
 		hx_printf("find device on %s\n", g_dev_path);
 	}
 
@@ -168,6 +165,7 @@ int	hx_close_i2c_device(void)
 {
 	if (devfd >= 0) {
 		close(devfd);
+		devfd = -1;
 		return 0;
 	} else {
 		fprintf(stderr, "devfd is invalid !!\n");
@@ -175,7 +173,7 @@ int	hx_close_i2c_device(void)
 	}
 }
 
-int hx_i2c_write(uint8_t *buf, uint32_t size)
+int hx_i2c_write(uint8_t i2c_addr, uint8_t *buf, uint32_t size)
 {
 	int err = -1;
 	struct i2c_rdwr_ioctl_data i2c_rdwr_data;
@@ -186,7 +184,7 @@ int hx_i2c_write(uint8_t *buf, uint32_t size)
 		return err;
 	}
 
-	msgs[0].addr = TARGET_I2C_ADDR;
+	msgs[0].addr = i2c_addr;
 	msgs[0].flags = 0; //I2C_M_IGNORE_NAK;
 	msgs[0].len = size;
 	msgs[0].buf = (char*)buf;
@@ -204,7 +202,7 @@ int hx_i2c_write(uint8_t *buf, uint32_t size)
 	return err;
 }
 
-int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
+int hx_i2c_read(uint8_t i2c_addr, uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 {
 	int err = -1;
 	struct i2c_rdwr_ioctl_data	i2c_rdwr_data;
@@ -215,12 +213,12 @@ int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 		return err;
 	}
 
-	msgs[0].addr = TARGET_I2C_ADDR;
+	msgs[0].addr = i2c_addr;
 	msgs[0].flags = 0;
 	msgs[0].len = txlen;
 	msgs[0].buf = (char*)txbuf;
 
-	msgs[1].addr = TARGET_I2C_ADDR;
+	msgs[1].addr = i2c_addr;
 	msgs[1].flags = I2C_M_RD;
 	msgs[1].len = rxlen;
 	msgs[1].buf = (char*)rxbuf;
@@ -237,7 +235,7 @@ int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 	return err;
 }
 
-int hid_i2c_write(uint8_t *buf, uint32_t size)
+int hid_i2c_write(uint8_t i2c_addr, uint8_t *buf, uint32_t size)
 {
 	int err = -1;
 	struct i2c_rdwr_ioctl_data i2c_rdwr_data;
@@ -248,7 +246,7 @@ int hid_i2c_write(uint8_t *buf, uint32_t size)
 		return err;
 	}
 
-	msgs[0].addr = HX_I2C_ADDR;
+	msgs[0].addr = i2c_addr;
 	msgs[0].flags = 0; //I2C_M_IGNORE_NAK;
 	msgs[0].len = size;
 	msgs[0].buf = (char*)buf;
@@ -266,7 +264,7 @@ int hid_i2c_write(uint8_t *buf, uint32_t size)
 	return err;
 }
 
-int hid_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
+int hid_i2c_read(uint8_t i2c_addr, uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 {
 	int err = -1;
 	struct i2c_rdwr_ioctl_data	i2c_rdwr_data;
@@ -277,12 +275,12 @@ int hid_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen)
 		return err;
 	}
 
-	msgs[0].addr = HX_I2C_ADDR;
+	msgs[0].addr = i2c_addr;
 	msgs[0].flags = 0;
 	msgs[0].len = txlen;
 	msgs[0].buf = (char*)txbuf;
 
-	msgs[1].addr = HX_I2C_ADDR;
+	msgs[1].addr = i2c_addr;
 	msgs[1].flags = I2C_M_RD;
 	msgs[1].len = rxlen;
 	msgs[1].buf = (char*)rxbuf;

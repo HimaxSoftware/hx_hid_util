@@ -21,10 +21,10 @@ int hx_scan_i2c_device(char *devp);
 int hx_open_i2c_device(void);
 int hx_close_i2c_device(void);
 
-int hx_i2c_write(uint8_t *pbuf, uint32_t buf_size);
-int hx_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen);
-int hid_i2c_write(uint8_t *buf, uint32_t size);
-int hid_i2c_read(uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen);
+int hx_i2c_write(uint8_t i2c_addr,uint8_t *pbuf, uint32_t buf_size);
+int hx_i2c_read(uint8_t i2c_addr, uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen);
+int hid_i2c_write(uint8_t i2c_addr, uint8_t *buf, uint32_t size);
+int hid_i2c_read(uint8_t i2c_addr, uint8_t *txbuf, uint32_t txlen, uint8_t *rxbuf, uint32_t rxlen);
 
 #endif
 

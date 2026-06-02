@@ -1,0 +1,1 @@
+make clean;make embd CUSTOMER=COST_135 PROJECT=FRAMEWORK

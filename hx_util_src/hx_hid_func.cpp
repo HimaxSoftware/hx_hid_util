@@ -15,11 +15,10 @@
  */
 
 #include <stdio.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <unistd.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <errno.h>
@@ -33,11 +32,13 @@
 
 char *g_hid_path;
 long g_hidfd = -1;
+const uint32_t mapping_table_size = 32;
 struct hid_id_size_mapping_t {
-	uint8_t id;
+	uint16_t id;
 	uint16_t sz;
-} g_hid_id_size_mapping[15];
-int g_hid_id_sz_mapping_count = 0;
+	uint32_t bit_size;
+} g_hid_id_size_mapping[mapping_table_size];
+int32_t g_hid_id_sz_mapping_count = 0;
 
 int hx_get_hid_fd()
 {
@@ -48,40 +49,40 @@ int hx_scan_open_hidraw(OPTDATA& optdata)
 {
 	int found = 0;
 	int dev_no = 0;
-	int fd = 0;
+	int fd = -1;
 	int ret;
 	static char hidraw_path[64];
 	char dev_dir[] = "/dev";
 	struct hidraw_devinfo dinfo;
 
-	if (g_hidfd > 0)
+	if (g_hidfd >= 0)
 		return 0;
 
 	// hx_printf("Scan HIDRAW device in %s ...\n", dev_dir);
 
 	do {
 		memset(hidraw_path, 0, sizeof(hidraw_path));
-		sprintf(hidraw_path, "%s/hidraw%d", dev_dir, dev_no);
+		snprintf(hidraw_path, sizeof(hidraw_path), "%s/hidraw%d", dev_dir, dev_no);
 
 		if (access(hidraw_path, F_OK) != 0) {
 			hx_printf("f%s device node not exist!\n", hidraw_path);
-
-			break;
+			dev_no++;
+			continue;
 		}
 
 		fd = open(hidraw_path, O_RDWR|O_DSYNC|O_NONBLOCK);
 		if (fd < 0) {
 			hx_printf("failed to open %s!\n", hidraw_path);
-
-			break;
+			dev_no++;
+			continue;
 		}
 
 		ret = ioctl(fd, HIDIOCGRAWINFO, &dinfo);
 		if (ret != 0) {
 			hx_printf("failed to get info from %s!\n", hidraw_path);
 			close(fd);
-
-			break;
+			dev_no++;
+			continue;
 		}
 		/* hx_printf("hidraw info, bus type : %d, vendor : 0x%04X, product : 0x%04X\n", \
 		 *	dinfo.bustype, dinfo.vendor, dinfo.product); */
@@ -97,18 +98,20 @@ int hx_scan_open_hidraw(OPTDATA& optdata)
 			optdata.bus = dinfo.bustype;
 			break;
 		}
+		close(fd);
+		fd = -1;
 		dev_no++;
 	} while(dev_no < 10);
 
 	if (found == 0)
-		return -EIO;
+		return -ENODEV;
 
 	return 0; 
 }
 
 void hx_hid_close(void)
 {
-	if (g_hidfd > 0) {
+	if (g_hidfd >= 0) {
 		close(g_hidfd);
 		g_hidfd = -1;
 		g_hid_id_sz_mapping_count = 0;
@@ -143,11 +146,13 @@ int hx_hid_get_feature(int id, uint8_t *data, int32_t len)
 {
 	int ret;
 	uint8_t *indata;
+	uint32_t req_size = len + 1;
 
 	if (data == NULL)
 		return -ENOMEM;
 	
-	indata = (uint8_t *)malloc(len + 1);
+	req_size = ((req_size / 4) + ((req_size % 4) ? 1 : 0)) * 4;
+	indata = (uint8_t *)malloc(req_size);
 	if (indata == NULL)
 		return -ENOMEM;
 
@@ -253,12 +258,13 @@ int hx_hid_print_RD(void)
 		return ret;
 
 	rd.size = rdsize;
-	if (ioctl(g_hidfd, HIDIOCGRDESC, &rd) < 0) {
+	ret = ioctl(g_hidfd, HIDIOCGRDESC, &rd);
+	if (ret < 0) {
 		return ret;
 	}
 
 	itemDesc = rd.value[0];
-	for (int i = 0, tidx = 0, last_tidx = 0; i < rd.size; i++) {
+	for (uint32_t i = 0, tidx = 0, last_tidx = 0; i < rd.size; i++) {
 		if (i == tidx) {
 			if (i > 0) {
 				itemDesc = rd.value[last_tidx];
@@ -441,7 +447,8 @@ int hx_hid_print_RD(void)
 			last_tidx = tidx;
 			tidx += current_desc_size;
 		} else {
-			if ((i - last_tidx - 1) < sizeof(current_desc))
+			if ((i - last_tidx) >= 1 &&
+				((i - last_tidx - 1) < sizeof(current_desc)))
 				current_desc[i - last_tidx - 1] = rd.value[i];
 		}
 		hx_printf(" 0x%02X,", rd.value[i]);
@@ -458,7 +465,7 @@ int hx_hid_print_RD(void)
 	return 0;
 }
 
-int hx_hid_parse_RD_for_idsz(void)
+int hx_hid_parse_RD_for_idsz(OPTDATA& optdata)
 {
 	int rdsize, ret;
 	struct hidraw_report_descriptor rd;
@@ -470,48 +477,116 @@ int hx_hid_parse_RD_for_idsz(void)
 	uint8_t current_desc[255] = {0};
 	uint32_t current_value;
 	// uint32_t current_usage_page = 0;
-	int c_id = -1;
-	int32_t c_size = -1;
+	// char sentence[64] = {0};
+	// int sentence_len = 0;
+	int16_t last_id = -1;
 	
 	ret = ioctl(g_hidfd, HIDIOCGRDESCSIZE, &rdsize);
 	if (ret < 0)
 		return ret;
 
 	rd.size = rdsize;
-	if (ioctl(g_hidfd, HIDIOCGRDESC, &rd) < 0)
+	ret = ioctl(g_hidfd, HIDIOCGRDESC, &rd);
+	if (ret < 0)
 		return ret;
 
+	// if ((optdata.options & OPTION_HID_INFO) == OPTION_HID_INFO) {
+	// 	hx_printf("Raw Report data(%d bytes):\n", rd.size);
+	// 	for (uint32_t i = 0; i < rd.size; i++) {
+	// 		hx_printf(" %02X,", rd.value[i]);
+	// 		if ((i > 0) && (i % 16 == 15))
+	// 			hx_printf("\n");
+	// 	}
+	// 	hx_printf("\n");
+	// }
+	g_hid_id_sz_mapping_count = -1;
 	itemDesc = rd.value[0];
-	for (int i = 0, tidx = 0, last_tidx = 0; i < rd.size; i++) {
+	for (uint32_t i = 0, tidx = 0, last_tidx = 0; i < rd.size; i++) {
 		if (i == tidx) {
 			if (i > 0) {
 				itemDesc = rd.value[last_tidx];
+				// hx_printf("\nHDR: %02X:%s", itemDesc, sentence);
+				// memset(sentence, 0, sizeof(sentence));
 				switch (itemDesc & 0xFC) {
 					case 0x04:
-						current_value = calculate_prop_value(current_desc, current_desc_size);
+						current_value = calculate_prop_value(current_desc, (itemDesc & 0x03) + 1);
 						// current_usage_page = current_value;
 						break;
 					case 0x80:
+						if (last_id != -1 && current_id == last_id) {
+							g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size += current_bit_size*current_count;
+							g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz = g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size/8;
+							// hx_printf("// [%d] %s (ID: %02X, sz: %d bits(%d bytes) mapping): repeated, total size: %d bytes\n",
+							// 		  g_hid_id_sz_mapping_count, "Input", current_id, current_bit_size*current_count,
+							// 		  current_bit_size*current_count/8, g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz);
+							break;
+						}
+						if ((g_hid_id_sz_mapping_count + 1) > (int32_t)mapping_table_size)
+							break;
+						else
+							g_hid_id_sz_mapping_count++;
+						// hx_printf("// [%d] %s (ID: %02X, sz: %d bits(%d bytes) mapping): ", g_hid_id_sz_mapping_count, "Input", current_id, current_bit_size*current_count, current_bit_size*current_count/8);
+						if (g_hid_id_sz_mapping_count >= (int32_t)mapping_table_size)
+							break;
+						// hx_printf("// commit\n");
+						last_id = current_id;
 						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].id = current_id;
-						g_hid_id_size_mapping[g_hid_id_sz_mapping_count++].sz = current_bit_size*current_count/8;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size = current_bit_size*current_count;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz = g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size/8;
 						break;
 					case 0xB0:
+						if (last_id != -1 && current_id == last_id) {
+							g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size += current_bit_size*current_count;
+							g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz = g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size/8;
+							// hx_printf("// [%d] %s (ID: %02X, sz: %d bits(%d bytes) mapping): repeated, total size: %d bytes\n",
+							// 		  g_hid_id_sz_mapping_count, "Feature", current_id, current_bit_size*current_count,
+							// 		  current_bit_size*current_count/8, g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz);
+							break;
+						}
+						if ((g_hid_id_sz_mapping_count + 1) > (int32_t)mapping_table_size)
+							break;
+						else
+							g_hid_id_sz_mapping_count++;
+						// hx_printf("// [%d] %s (ID: %02X, sz: %d bits(%d bytes) mapping): ", g_hid_id_sz_mapping_count, "Feature", current_id, current_bit_size*current_count, current_bit_size*current_count/8);
+						if (g_hid_id_sz_mapping_count >= (int32_t)mapping_table_size)
+							break;
+						// hx_printf("// commit\n");
+						last_id = current_id;
 						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].id = current_id;
-						g_hid_id_size_mapping[g_hid_id_sz_mapping_count++].sz = current_bit_size*current_count/8;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size = current_bit_size*current_count;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz = g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size/8;
 						break;
 					case 0x90:
+						if (last_id != -1 && current_id == last_id) {
+							g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size += current_bit_size*current_count;
+							g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz = g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size/8;
+							// hx_printf("// [%d] %s (ID: %02X, sz: %d bits(%d bytes) mapping): repeated, total size: %d bytes\n",
+							// 		  g_hid_id_sz_mapping_count, "Output", current_id, current_bit_size*current_count,
+							// 		  current_bit_size*current_count/8, g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz);
+							break;
+						}
+						if ((g_hid_id_sz_mapping_count + 1) > (int32_t)mapping_table_size)
+							break;
+						else
+							g_hid_id_sz_mapping_count++;
+						// hx_printf("// [%d] %s (ID: %02X, sz: %d bits(%d bytes) mapping): ", g_hid_id_sz_mapping_count, "Output", current_id, current_bit_size*current_count, current_bit_size*current_count/8);
+						if (g_hid_id_sz_mapping_count >= (int32_t)mapping_table_size)
+							break;
+						hx_printf("// commit\n");
+						last_id = current_id;
 						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].id = current_id;
-						g_hid_id_size_mapping[g_hid_id_sz_mapping_count++].sz = current_bit_size*current_count/8;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size = current_bit_size*current_count;
+						g_hid_id_size_mapping[g_hid_id_sz_mapping_count].sz = g_hid_id_size_mapping[g_hid_id_sz_mapping_count].bit_size/8;
 						break;
 					case 0x84:
 						current_id = current_desc[0];
 						break;
 					case 0x74:
-						current_value = calculate_prop_value(current_desc, current_desc_size);
+						current_value = calculate_prop_value(current_desc, (itemDesc & 0x03) + 1);
 						current_bit_size = current_value;
 						break;
 					case 0x94:
-						current_value = calculate_prop_value(current_desc, current_desc_size);
+						current_value = calculate_prop_value(current_desc, (itemDesc & 0x03) + 1);
 						current_count = current_value;
 						break;
 					default:
@@ -525,22 +600,30 @@ int hx_hid_parse_RD_for_idsz(void)
 
 			last_tidx = tidx;
 			tidx += current_desc_size;
+			// sentence_len = 0;
 		} else {
-			if ((i - last_tidx - 1) < sizeof(current_desc))
+			if ((i - last_tidx) >= 1 &&
+				((i - last_tidx - 1) < sizeof(current_desc))) {
 				current_desc[i - last_tidx - 1] = rd.value[i];
+				// hx_printf(" %02X,", rd.value[i]);
+				// snprintf(sentence + strlen(sentence), sizeof(sentence) - strlen(sentence), " %02X,", rd.value[i]);
+				// sentence_len++;
+			}
 		}
 	}
-	hx_printf("Mappings:\n");
-	for (int i = 0; i < g_hid_id_sz_mapping_count; i++) {
-		if (g_hid_id_size_mapping[i].id != c_id) {
-			if (c_id != -1) {
-				hx_printf("id: %d, size: %d\n", c_id, c_size);
-			}
-			c_id = g_hid_id_size_mapping[i].id;
-			c_size = g_hid_id_size_mapping[i].sz;
-		} else {
-			c_size += g_hid_id_size_mapping[i].sz;
-		}
+	hx_printf("\n");
+
+	if ((optdata.options & OPTION_HID_INFO) == OPTION_HID_INFO) {
+		hx_printf("Mappings(total %d):\n", g_hid_id_sz_mapping_count + 1);
+		for (int32_t i = 0; i <= g_hid_id_sz_mapping_count; i++)
+			hx_printf("id: %02X, size: %d bytes\n", g_hid_id_size_mapping[i].id, g_hid_id_size_mapping[i].sz);
+	}
+
+	if (g_hid_id_sz_mapping_count < 0) {
+		hx_printf("No valid ID-size mapping found in report descriptor!\n");
+		g_hid_id_sz_mapping_count = 0;
+	} else {
+		g_hid_id_sz_mapping_count++;
 	}
 
 	return 0;
@@ -548,14 +631,17 @@ int hx_hid_parse_RD_for_idsz(void)
 
 int hx_hid_get_size_by_id(int id)
 {
-	if (g_hid_id_sz_mapping_count <= 0)
+	if (g_hid_id_sz_mapping_count <= 0) {
+		hx_printf("No valid ID-size mapping found in report descriptor, please check the report descriptor parsing result!\n");
 		return -EFAULT;
+	}
 	
-	for (int i = 0; i < g_hid_id_sz_mapping_count; i++) {
+	for (int32_t i = 0; i < g_hid_id_sz_mapping_count; i++) {
 		if (g_hid_id_size_mapping[i].id == id)
 			return g_hid_id_size_mapping[i].sz;
 	}
 
+	hx_printf("No valid ID-size mapping found for ID: %02X, please check the report descriptor parsing result!\n", id);
 	return -ENODATA;
 }
 

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)  
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).  
 
+## [1.3.8] - 2026-06-02
+### Added
+- Embedded firmware build flow (`make embd`) with resource packaging support.
+- LZ4-based firmware payload handling and embedded decode/decompress support.
+- DD ROM update option (`-L` / `--dd-rom-update`).
+- HID I2C address option (`-Q` / `--hid-i2c-address`).
+- HID FW info display option (`-G` / `--hid-fw-info-display`).
+- Raw data rotation option (`-H` / `--hid-data-rotate`).
+- Build helper scripts under `scripts/` for amd64/armv8 and framework/test flows.
+
+### Changed
+- Improve build system for architecture-aware toolchain selection and size optimization.
+- Extend HID firmware update path to include main/bootloader/DD update logic.
+- Rename force update option to generic `--force-update`.
+- Rename HID output path option to `--hid-output-log-file`.
+- Improve option parsing safety and firmware path handling.
+
+### Fixed
+- Improve HID raw device scan flow by continuing on per-node open/ioctl failures.
+- Improve HID report descriptor ID-size parsing for repeated IDs and bit-size accumulation.
+- Fix several HID/I2C robustness issues around buffer sizing and descriptor parsing.
+
 ## [1.3.7] - 2025-06-12
 ### Fixed
 - Fix memory leak when set/get ioctl failed

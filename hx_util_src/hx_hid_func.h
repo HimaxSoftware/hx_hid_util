@@ -25,7 +25,7 @@ void hx_hid_close(void);
 int hx_hid_set_output(int id, int32_t idLen, uint8_t *data, int32_t dataLen);
 int hx_hid_get_feature(int id, uint8_t *data, int32_t len);
 int hx_hid_set_feature(int id, uint8_t *data, int32_t len);
-int hx_hid_parse_RD_for_idsz(void);
+int hx_hid_parse_RD_for_idsz(OPTDATA& optdata);
 int hx_hid_get_size_by_id(int id);
 int hx_hid_print_RD(void);
 int hx_hid_write_reg(uint32_t addr, uint32_t data, OPTDATA& optdata);
