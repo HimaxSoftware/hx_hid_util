@@ -1,9 +1,19 @@
 # ChangeLog
 
-All notable changes to this project will be documented in this file.  
-  
-The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)  
-and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).  
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)
+and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+
+## [1.4.0] - 2026-06-03
+### Changed
+- Bump utility version to `V1.4.0`.
+- Move embedded firmware XOR key from hardcoded source in `main.cpp` to generated symbols (`xor_key`, `xor_key_len`) for `_EMBEDDED_FW_` builds.
+- Update embedded decode path to use generated key length (`xor_key_len`) instead of a compile-time array size.
+
+### Build
+- Extend embedded Makefile objects to include generated key object (`xor_key.o`).
+- Add Makefile rule to generate `xor_key.c` from `resource/xor.key` via `xxd` and compile it into the embedded build.
 
 ## [1.3.8] - 2026-06-02
 ### Added
@@ -64,7 +74,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [1.3.0] - 2025-01-07
 ### Added
-- SNR option -n to calculate SNR on target device.  
+- SNR option -n to calculate SNR on target device.
 - hid_show_version option -f to correct customer view of firmware version.
 - Pen information supported by firmware in hid_show_fw_info function.
 - Pen resolution and LTDI_IC_NUM info in INFO struct.

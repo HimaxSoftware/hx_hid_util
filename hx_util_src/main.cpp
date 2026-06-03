@@ -33,24 +33,18 @@
 #include "hx_hid_func.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.3.8"
+#define HX_UTIL_VER "V1.4.0"
 #define HX_FW_FOLDER "./HXFW"
 
 #define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:ZYo:e:n:fJ:xyzQ:L:G:H:"
 
 extern "C" {
 	extern const unsigned char RSRC_START[];
-	// extern const unsigned char RSRC_END[];
-	// extern const size_t RSRC_SIZE;
 }
-
-static const uint8_t xor_key[] = {
-	0x61, 0x91, 0x0d, 0x94, 0x46, 0x12, 0x10, 0x32, 0x2e, 0xe0, 0xc1, 0xe3, 0x4e, 0x45, 0x8f, 0xe9,
-	0x10, 0x5b, 0xc2, 0xcc, 0x71, 0x95, 0xc5, 0xd9, 0x38, 0x80, 0x50, 0x27, 0x98, 0x5b, 0x92, 0xa1,
-	0x67, 0x5a, 0x01, 0xa2, 0xc8, 0x44, 0xbf, 0x94, 0xbb, 0xfa, 0x9c, 0x2b, 0x89, 0x8e, 0xe6, 0xb3,
-	0x5e, 0xb7, 0xc1, 0xb7, 0x30, 0xba, 0x61, 0xd4, 0x66, 0x94, 0xda, 0xfc, 0x27, 0x41, 0x0a, 0xd2
-};
-
+#if defined(_EMBEDDED_FW_)
+extern unsigned char xor_key[];
+extern unsigned int xor_key_len;
+#endif
 static struct option long_option[] = {
 	{"help", 0, NULL, 'h'},
 	{"device", 1, NULL, 'd'},
@@ -648,7 +642,7 @@ int main(int argc, char *argv[])
 	}
 	memcpy(encoded_data, RSRC_START, compressed_size);
 	// printf("Firmware data loaded, size = %zu bytes\n", compressed_size);
-	decode_array_inplace(encoded_data, compressed_size, xor_key, sizeof(xor_key));
+	decode_array_inplace(encoded_data, compressed_size, xor_key, xor_key_len);
 	decoded_size = decompress_fw(encoded_data, compressed_size, decoded_data, sizeof(decoded_data));
 	free(encoded_data);
 	if ((decoded_size <= 0) && (decoded_size != ORIG_SIZE)) {

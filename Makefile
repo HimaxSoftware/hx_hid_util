@@ -106,7 +106,12 @@ FW_SIZE_HDR = $(EMBD_OBJ_DIR)/embed_size.h
 FWOBJS      = $(EMBD_OBJ_DIR)/temp.rco
 LZ4			= lz4
 COBJS		= $(EMBD_OBJ_DIR)/lz4.o
-EOBJS      	= $(FWOBJS) $(CPPEOBJS) $(COBJS)
+EOBJS      	= $(FWOBJS) $(CPPEOBJS) $(COBJS) $(KEYOBJ)
+KEYOBJ			= $(EMBD_OBJ_DIR)/xor_key.o
+$(KEYOBJ): resource/xor.key
+	@xxd -g 1 -i -n xor_key $< >> $(EMBD_OBJ_DIR)/xor_key.c
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $(EMBD_OBJ_DIR)/xor_key.c -o $@
+
 $(FW_SIZE_HDR): $(FWOBJS)
 	@size=`$(DEFAULT_OBJDUMP) $< -t | awk '/_binary_$(EMBD_OBJ_DIR)_temp_rc_size/ { printf "%d\\n", "0x" $$1; found=1; exit } END { exit found ? 0 : 1 }'` && \
 	echo "#define RSRC_SIZE ($$size)" > $@
