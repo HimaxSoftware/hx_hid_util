@@ -76,6 +76,8 @@ enum mutual_option {
 	OPTION_HID_SNR_CALCULATE = (1 + 17) << mutual_shift_bit,
 	OPTION_HID_SHOW_SPECIFY_DIAG = (1 + 18) << mutual_shift_bit,
 	OPTION_HID_HIMAX_IDENT = (1 + 19) << mutual_shift_bit,
+	OPTION_HID_DD_IN_ALL_UPDATE = (1 + 20) << mutual_shift_bit,
+	OPTION_HID_CHECK_PARTITION_CRC = (1 + 21) << mutual_shift_bit,
 	OPTION_MUTUAL_FILTER = ~OPTION_NONE
 };
 
@@ -108,6 +110,19 @@ enum update_command {
 	UPDATE_CMD_MAIN = 0x55,
 	UPDATE_CMD_BL = 0x77,
 	UPDATE_CMD_DD = 0x66
+};
+
+enum crc_check_command {
+	CRC_CHECK_CMD_MAIN = 0xC5,
+	CRC_CHECK_CMD_DD = 0xC6,
+	CRC_CHECK_CMD_BL = 0xC7,
+	CRC_CHECK_CMD_CFU_MAIN = 0xCA,
+	CRC_CHECK_CMD_CFU_BL = 0xCB,
+};
+
+enum crc_check_result {
+	CRC_CHECK_RESULT_PASS = 0xB1,
+	CRC_CHECK_RESULT_FAIL = 0xB2,
 };
 
 extern "C" {
@@ -300,7 +315,8 @@ enum fw_update_error_code {
 	FWUP_ERROR_POLLING_TIMEOUT = 0xFFFFFF03,
 	FWUP_ERROR_FW_TRANSFER = 0xFFFFFF04,
 	FWUP_ERROR_FW_INFO_INVALID = 0xFFFFFF05,
-	FWUP_ERROR_FW_SIZE_MISMATCH = 0xFFFFFF06
+	FWUP_ERROR_FW_SIZE_MISMATCH = 0xFFFFFF06,
+	FWUP_ERROR_INVALID_OPTION = 0xFFFFFF07,
 };
 
 typedef struct hx_criteria_template {

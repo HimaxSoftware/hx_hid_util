@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-06-05
+### Added
+- HID DD-in-all update option (`-K` / `--hid-dd-in-all-update`) to update DD ROM from a full firmware image.
+- HID partition CRC check option (`-X` / `--hid-check-partition-crc`) for main, DD, BL, CFU main, and CFU BL partitions.
+- Partition CRC command/result definitions and `hid_check_partition_CRC()` API support.
+
+### Changed
+- Bump utility version to `V1.4.1`.
+- Allow DD update flow to reuse full-firmware input by starting from offset `0` when `--hid-dd-in-all-update` is selected.
+- Extend firmware-path validation and main dispatch flow to cover the new DD-in-all update option.
+
+### Fixed
+- Reject firmware layouts that contain display mapping when neither DD-only update nor DD-in-all update was requested.
+- Return a dedicated invalid-option firmware update error for unsupported DD update combinations.
+
 ## [1.4.0] - 2026-06-03
 ### Changed
 - Bump utility version to `V1.4.0`.

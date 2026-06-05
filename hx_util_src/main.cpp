@@ -33,10 +33,10 @@
 #include "hx_hid_func.h"
 
 #define HX_UTIL_NAME "Himax Update Utility"
-#define HX_UTIL_VER "V1.4.0"
+#define HX_UTIL_VER "V1.4.1"
 #define HX_FW_FOLDER "./HXFW"
 
-#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:ZYo:e:n:fJ:xyzQ:L:G:H:"
+#define HX_UTIL_OPT	"hd:u:acbivpslr:w:U:FB:A:IR:W:S:DT:M:N:C:OPVE:ZYo:e:n:fJ:xyzQ:L:G:H:K:X:"
 
 extern "C" {
 	extern const unsigned char RSRC_START[];
@@ -104,6 +104,10 @@ static struct option long_option[] = {
 	{"hid-fw-info-display", 1, NULL, 'G'},
 	// add an option to rotate result 2d array by 90, 180, 270 degree
 	{"hid-data-rotate", 1, NULL, 'H'},
+	// add an option to update DD ROM with Full FW specified
+	{"hid-dd-in-all-update", 1, NULL, 'K'},
+	// add an option to check specify partition CRC
+	{"hid-check-partition-crc", 1, NULL, 'X'},
 
 	{0, 0, 0, 0},
 };
@@ -182,6 +186,8 @@ void print_help(const char *prog_name)
 	printf("\t-L, --dd-rom-update\tUpdate DD ROM with file.\n");
 	printf("\t-G, --hid-fw-info-display\tDisplay FW info.\n");
 	printf("\t-H, --hid-data-rotate\tRotate 2D array by 90, 180, 270 degree.\n");
+	printf("\t-K, --hid-dd-in-all-update\tUpdate DD ROM with Full FW specified.\n");
+	printf("\t-X, --hid-check-partition-crc\tCheck specify partition(main:xC5/dd:xC6/bl:xC7/cfu_main:xCA/cfu_bl:xCB) CRC.\n");
 }
 
 void hx_printf(const char *fmt, ...)
@@ -573,6 +579,20 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 				break;
 			}
 			optp->options |= OPTION_HID_ROTATE_RESULT;
+			break;
+		case 'K':
+			optp->options = OPTION_HID_DD_IN_ALL_UPDATE | (optp->options & OPTION_NONE);
+			optp->fw_path = get_1st_filepath_in_fw_folder(optarg);
+			break;
+		case 'X':
+			optp->param.i = strtoul(optarg, &endptr, 0);
+			if (errno != 0 || *endptr != '\0' || (optp->param.i != 0xC5 && optp->param.i != 0xC6 && optp->param.i != 0xC7 && optp->param.i != 0xCA && optp->param.i != 0xCB)) {
+				optp->param.i = 0;
+				hx_printf("parsing partition type error! Only support main:0xC5/dd:0xC6/bl:0xC7/cfu_main:0xCA/cfu_bl:0xCB.\n");
+				break;
+			}
+			optp->options = OPTION_HID_CHECK_PARTITION_CRC | (optp->options & OPTION_NONE);
+			break;
 		default:
 			break;
 		}
@@ -592,7 +612,8 @@ int parse_options(int argc, char *argv[], OPTDATA *optp)
 		is_opt_set(optp, OPTION_HID_BL_UPDATE) ||
 		is_opt_set(optp, OPTION_HID_ALL_UPDATE) ||
 		is_opt_set(optp, OPTION_HID_DD_UPDATE) ||
-		is_opt_set(optp, OPTION_FW_INFO_DISPLAY)) {
+		is_opt_set(optp, OPTION_FW_INFO_DISPLAY) ||
+		is_opt_set(optp, OPTION_HID_DD_IN_ALL_UPDATE)) {
 		if (optp->fw_path == NULL) {
 			printf("No firmware file to use!\n");
 			return 1;
@@ -770,7 +791,7 @@ int main(int argc, char *argv[])
 	} else if (is_opt_set(&opt_data, OPTION_HID_BL_UPDATE)) {
 		int errorCode = 0;
 		ret = hid_bl_update(opt_data, dev_info, errorCode);
-	} else if (is_opt_set(&opt_data, OPTION_HID_DD_UPDATE)) {
+	} else if (is_opt_set(&opt_data, OPTION_HID_DD_UPDATE) || is_opt_set(&opt_data, OPTION_HID_DD_IN_ALL_UPDATE)) {
 		int errorCode = 0;
 		ret = hid_dd_update(opt_data, dev_info, errorCode);
 	} else if (is_opt_set(&opt_data, OPTION_HID_ALL_UPDATE)) {
@@ -814,6 +835,8 @@ int main(int argc, char *argv[])
 		ret = hid_snr_calculation(opt_data);
 	} else if (is_opt_set(&opt_data, OPTION_HID_HIMAX_IDENT)) {
 		ret = hid_himax_identify(opt_data);
+	} else if (is_opt_set(&opt_data, OPTION_HID_CHECK_PARTITION_CRC)) {
+		ret = hid_check_partition_CRC(opt_data);
 	}
 
 	if (is_opt_set(&opt_data, OPTION_REBIND)) {

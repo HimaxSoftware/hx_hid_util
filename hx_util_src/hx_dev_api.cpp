@@ -2487,7 +2487,10 @@ POLL_FAILED:
 					return -EIO;
 				}
 				writeSize = fw_entry_table[i].unit_sz * 1024;
-				fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
+				if (!is_opt_set(&opt_data, OPTION_HID_DD_UPDATE))
+					fwStartLoc = fw_entry_table[i].bin_start_offset * 1024;
+				else
+					fwStartLoc = 0;
 				outputTimes = writeSize / sz;
 				for (uint32_t i = 0; i < outputTimes; i++) {
 					hx_printf("[new]Sending trunk %d/%d of %d kb\r", i + 1, outputTimes, writeSize / 1024);
@@ -2798,9 +2801,16 @@ int hid_dd_update(OPTDATA& opt_data, DEVINFO& dinfo, int& lastError)
 			lastError = FWUP_ERROR_FW_INFO_INVALID;
 			hx_hid_close();
 			goto HID_PREPARE_FAILED;
-		} else if (opt_data.hid_info.display_mapping.unit_sz * 1024 != hxfw.len) {
-			printf("Display rom size in firmware info is different from actual firmware size, can't continue update!\n");
-			lastError = FWUP_ERROR_FW_SIZE_MISMATCH;
+		} else if (is_opt_set(&opt_data, OPTION_HID_DD_UPDATE)) {
+			if (opt_data.hid_info.display_mapping.unit_sz * 1024 != hxfw.len) {
+				printf("Display rom size in firmware info is different from actual firmware size, can't continue update!\n");
+				lastError = FWUP_ERROR_FW_SIZE_MISMATCH;
+				hx_hid_close();
+				goto HID_PREPARE_FAILED;
+			}
+		} else if (!is_opt_set(&opt_data, OPTION_HID_DD_IN_ALL_UPDATE)) {
+			printf("Display mapping found in FW layout, but no DD update option set, can't continue update!\n");
+			lastError = FWUP_ERROR_INVALID_OPTION;
 			hx_hid_close();
 			goto HID_PREPARE_FAILED;
 		}
@@ -5375,4 +5385,81 @@ SETUP_FAILED:
 		printf("No Himax device found!\n");
 		return -ENODEV;
 	}
+}
+
+static const char* crc_check_partition_to_string(int crc_partition)
+{
+	switch (crc_partition) {
+	case CRC_CHECK_CMD_MAIN:
+		return "main";
+	case CRC_CHECK_CMD_DD:
+		return "dd";
+	case CRC_CHECK_CMD_BL:
+		return "bl";
+	case CRC_CHECK_CMD_CFU_MAIN:
+		return "cfu_main";
+	case CRC_CHECK_CMD_CFU_BL:
+		return "cfu_bl";
+	default:
+		return "unknown";
+	}
+}
+
+int hid_check_partition_CRC(OPTDATA& opt_data)
+{
+	int ret = 0;
+	bool bHandshakePresent = false;
+	const uint32_t pollingInterval = 300;
+	uint8_t recevied_data[2] = {0};
+	int nDataRecevied = 0;
+	uint8_t cmd = 0;
+
+	ret = hx_scan_open_hidraw(opt_data);
+	if (ret != 0) {
+		printf("Failed to open hidraw device!\n");
+		goto HID_PREPARE_FAILED;
+	}
+
+	ret = hx_hid_parse_RD_for_idsz(opt_data);
+	if (ret != 0) {
+		printf("Failed to parse hidraw RD for id and size!\n");
+		goto PROCESS_FAILED;
+	}
+
+	bHandshakePresent = (hx_hid_get_size_by_id(HID_FW_UPDATE_HANDSHAKING_ID) == 1)?true:false;
+	if (!bHandshakePresent) {
+		printf("No handshaking ID in RD, not support partition CRC check!\n");
+		ret = -ENODEV;
+		goto PROCESS_FAILED;
+	}
+
+	if (hx_hid_set_feature(HID_FW_UPDATE_HANDSHAKING_ID, opt_data.param.b, 1) != 0) {
+		printf("Failed to set handshaking ID for partition CRC check!\n");
+		ret = -EIO;
+		goto PROCESS_FAILED;
+	}
+	cmd = CRC_CHECK_RESULT_PASS;
+	if (!pollingForResult(HID_FW_UPDATE_HANDSHAKING_ID, &cmd, 1, pollingInterval, 7,
+		recevied_data, &nDataRecevied)) {
+		if (nDataRecevied > 0) {
+			if (recevied_data[0] == CRC_CHECK_RESULT_FAIL) {
+				printf("%s: Partition CRC check failed!\n", crc_check_partition_to_string(opt_data.param.i));
+				ret = -EFAULT;
+			} else {
+				printf("Unknown result for partition CRC check: %02X\n", recevied_data[0]);
+				ret = -EINVAL;
+			}
+		} else {
+			printf("Failed to get result for partition CRC check!\n");
+			ret = -EIO;
+		}
+		goto PROCESS_FAILED;
+	}
+	printf("%s: Partition CRC check passed!\n", crc_check_partition_to_string(opt_data.param.i));
+
+PROCESS_FAILED:
+	hx_hid_close();
+HID_PREPARE_FAILED:
+
+	return ret;
 }
